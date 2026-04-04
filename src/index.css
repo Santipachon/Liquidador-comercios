@@ -1,0 +1,117 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    background-color: #f5f4f0;
+    color: #1a1a1a;
+    font-family: 'IBM Plex Sans', sans-serif;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-[#1a1a1a] text-white font-semibold px-8 py-4 rounded-none
+    transition-all duration-200 hover:bg-[#333] active:scale-95
+    text-lg tracking-wide cursor-pointer border-2 border-[#1a1a1a];
+  }
+
+  .btn-secondary {
+    @apply bg-transparent text-[#1a1a1a] font-semibold px-6 py-3 rounded-none
+    transition-all duration-200 hover:bg-[#1a1a1a] hover:text-white
+    text-base tracking-wide cursor-pointer border-2 border-[#1a1a1a];
+  }
+
+  .btn-danger {
+    @apply bg-transparent text-[#c0392b] font-semibold px-6 py-3 rounded-none
+    transition-all duration-200 hover:bg-[#c0392b] hover:text-white
+    text-base tracking-wide cursor-pointer border-2 border-[#c0392b];
+  }
+
+  .table-header {
+    @apply bg-[#1a1a1a] text-white font-semibold text-sm tracking-widest
+    uppercase px-4 py-3 text-left font-mono;
+  }
+
+  .table-cell {
+    @apply px-4 py-4 text-base border-b border-[#e0ddd5] text-[#1a1a1a];
+  }
+
+  .margin-input {
+    @apply w-20 text-center border-2 border-[#1a1a1a] bg-white font-mono
+    text-base py-1 px-2 focus:outline-none focus:border-[#2980b9]
+    transition-colors duration-200;
+  }
+
+  .calculated-cell {
+    @apply font-mono font-semibold text-[#1a6b3c] text-base;
+  }
+
+  .code-cell {
+    @apply font-mono text-sm tracking-widest bg-[#f0fdf4] px-3 py-1
+    border border-[#86efac] text-[#166534] inline-block;
+  }
+}
+
+@layer utilities {
+  .upload-zone {
+    border: 3px dashed #1a1a1a;
+    transition: all 0.2s ease;
+  }
+
+  .upload-zone:hover {
+    background-color: #fffbe6;
+    border-color: #d4a017;
+  }
+
+  .upload-zone.dragging {
+    background-color: #fffbe6;
+    border-color: #d4a017;
+    transform: scale(1.01);
+  }
+
+  .row-even {
+    background-color: #ffffff;
+  }
+
+  .row-odd {
+    background-color: #faf9f6;
+  }
+
+  .fade-in {
+    animation: fadeIn 0.4s ease forwards;
+  }
+
+  .slide-up {
+    animation: slideUp 0.5s ease forwards;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .pulse-ring {
+    animation: pulseRing 1.5s ease-in-out infinite;
+  }
+
+  @keyframes pulseRing {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.05); opacity: 0.8; }
+  }
+}
