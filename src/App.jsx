@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from 'react'
 import * as XLSX from 'xlsx'
+import JSZip from 'jszip'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 const LETRA_MAP = {
@@ -232,7 +233,6 @@ export default function App() {
     try {
       if (file.name.endsWith('.zip')) {
         // Procesar ZIP: extraer XML y PDF
-        const { default: JSZip } = await import('https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js')
         const zip = await JSZip.loadAsync(file)
 
         let xmlText = null
