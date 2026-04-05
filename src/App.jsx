@@ -2,8 +2,6 @@ import { useState, useRef, useCallback } from 'react'
 import * as XLSX from 'xlsx'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
-const WEBHOOK_URL = 'https://YOUR_N8N_WEBHOOK_URL/webhook/process-invoice'
-
 const LETRA_MAP = {
   1: 'R', 2: 'E', 3: 'P', 4: 'U', 5: 'B',
   6: 'L', 7: 'I', 8: 'C', 9: 'A', 0: 'S',
@@ -65,6 +63,11 @@ function formatCOP(n) {
   return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n)
 }
 
+function aproximar(n) {
+  // Aproxima al siguiente múltiplo de 100
+  return Math.ceil(n / 100) * 100
+}
+
 // ─── Icons ────────────────────────────────────────────────────────────────────
 function IconUpload() {
   return (
@@ -94,11 +97,13 @@ function IconTrash() {
 function UploadZone({ onFile, loading }) {
   const inputRef = useRef(null)
   const [dragging, setDragging] = useState(false)
+
   const handleDrop = useCallback((e) => {
     e.preventDefault(); setDragging(false)
     const file = e.dataTransfer.files[0]
-    if (file && file.name.endsWith('.xml')) onFile(file)
+    if (file) onFile(file)
   }, [onFile])
+
   return (
     <div
       className={`upload-zone rounded-none p-12 flex flex-col items-center justify-center gap-5 cursor-pointer select-none ${dragging ? 'dragging' : ''}`}
@@ -109,7 +114,7 @@ function UploadZone({ onFile, loading }) {
       role="button" tabIndex={0}
       onKeyDown={(e) => e.key === 'Enter' && inputRef.current?.click()}
     >
-      <input ref={inputRef} type="file" accept=".xml" className="hidden"
+      <input ref={inputRef} type="file" accept=".xml,.zip" className="hidden"
         onChange={(e) => { if (e.target.files[0]) onFile(e.target.files[0]); e.target.value = '' }}
         disabled={loading} />
       {loading ? (
@@ -123,9 +128,9 @@ function UploadZone({ onFile, loading }) {
           <div className="text-[#1a1a1a] pulse-ring"><IconUpload /></div>
           <div className="text-center">
             <p className="text-3xl font-bold text-[#1a1a1a] tracking-tight">+ Subir factura</p>
-            <p className="text-lg text-[#666] mt-2">Haga clic aquí o arrastre su archivo XML</p>
+            <p className="text-lg text-[#666] mt-2">Haga clic aquí o arrastre su archivo</p>
           </div>
-          <span className="text-sm font-mono text-[#999] bg-[#e8e6e0] px-3 py-1">Solo archivos .xml</span>
+          <span className="text-sm font-mono text-[#999] bg-[#e8e6e0] px-3 py-1">Archivos .xml o .zip</span>
         </>
       )}
     </div>
@@ -133,25 +138,52 @@ function UploadZone({ onFile, loading }) {
 }
 
 // ─── Product Row ──────────────────────────────────────────────────────────────
-function ProductRow({ product, index, onMarginChange }) {
-  const { nombre, codigo, cantidad, subtotal, margen } = product
-  const precioVenta = Math.round(subtotal * (1 + margen / 100))
-  const codigoLetras = numToLetras(precioVenta)
+function ProductRow({ product, index, onUpdate }) {
+  const { nombre, codigo, cantidad, precio_unitario, margen, tieneIva, aproximado } = product
+
+  // Base: precio unitario
+  let precio = precio_unitario
+  // Aplicar margen
+  precio = precio * (1 + margen / 100)
+  // Aplicar IVA si aplica
+  if (tieneIva) precio = precio * 1.19
+  // Aproximar si aplica
+  if (aproximado) precio = aproximar(precio)
+  else precio = Math.round(precio)
+
+  const codigoLetras = numToLetras(precio)
+
   return (
     <tr className={index % 2 === 0 ? 'row-even' : 'row-odd'}>
-      <td className="table-cell font-semibold">{nombre}</td>
+      <td className="table-cell font-semibold text-sm">{nombre}</td>
       <td className="table-cell font-mono text-[#555] text-sm">{codigo}</td>
       <td className="table-cell text-center font-mono font-semibold">{cantidad}</td>
-      <td className="table-cell font-mono">{formatCOP(subtotal)}</td>
+      <td className="table-cell font-mono text-sm">{formatCOP(precio_unitario)}</td>
       <td className="table-cell">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
           <input type="number" min="0" max="999" value={margen}
-            onChange={(e) => onMarginChange(index, e.target.value)}
+            onChange={(e) => onUpdate(index, 'margen', parseFloat(e.target.value) || 0)}
             className="margin-input" />
-          <span className="text-[#999] font-mono text-sm">%</span>
+          <span className="text-[#999] font-mono text-xs">%</span>
         </div>
       </td>
-      <td className="table-cell"><span className="calculated-cell">{formatCOP(precioVenta)}</span></td>
+      <td className="table-cell">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" checked={tieneIva}
+            onChange={(e) => onUpdate(index, 'tieneIva', e.target.checked)}
+            className="w-4 h-4 cursor-pointer accent-[#1a6b3c]" />
+          <span className="text-sm font-mono text-[#555]">19%</span>
+        </label>
+      </td>
+      <td className="table-cell">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" checked={aproximado}
+            onChange={(e) => onUpdate(index, 'aproximado', e.target.checked)}
+            className="w-4 h-4 cursor-pointer accent-[#1a6b3c]" />
+          <span className="text-xs font-mono text-[#555]">↑100</span>
+        </label>
+      </td>
+      <td className="table-cell"><span className="calculated-cell">{formatCOP(precio)}</span></td>
       <td className="table-cell"><span className="code-cell">{codigoLetras}</span></td>
     </tr>
   )
@@ -171,48 +203,102 @@ export default function App() {
   const [error, setError] = useState(null)
   const [toast, setToast] = useState(null)
   const [fileName, setFileName] = useState(null)
-  const [modo, setModo] = useState('local')
+  const [pdfUrl, setPdfUrl] = useState(null)
 
   function showToast(message, type = 'info', duration = 3500) {
     setToast({ message, type })
     setTimeout(() => setToast(null), duration)
   }
 
+  async function processXml(xmlText) {
+    const data = parsearFacturaDIAN(xmlText)
+    if (!data || data.length === 0)
+      throw new Error('No se encontraron productos. Verifique que sea una factura electrónica DIAN válida.')
+    setProducts(data.map(p => ({
+      ...p,
+      margen: 30,
+      tieneIva: false,
+      aproximado: false,
+    })))
+    showToast(`✓ ${data.length} producto(s) cargados`, 'success')
+  }
+
   async function handleFile(file) {
-    setFileName(file.name); setError(null); setLoading(true)
+    setFileName(file.name)
+    setError(null)
+    setLoading(true)
+    setPdfUrl(null)
+
     try {
-      let data = []
-      if (modo === 'local') {
+      if (file.name.endsWith('.zip')) {
+        // Procesar ZIP: extraer XML y PDF
+        const { default: JSZip } = await import('https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js')
+        const zip = await JSZip.loadAsync(file)
+
+        let xmlText = null
+        let pdfBlob = null
+
+        for (const [name, entry] of Object.entries(zip.files)) {
+          if (!entry.dir) {
+            const lower = name.toLowerCase()
+            if (lower.endsWith('.xml') && !xmlText) {
+              xmlText = await entry.async('string')
+            }
+            if (lower.endsWith('.pdf') && !pdfBlob) {
+              const pdfData = await entry.async('blob')
+              pdfBlob = new Blob([pdfData], { type: 'application/pdf' })
+            }
+          }
+        }
+
+        if (pdfBlob) {
+          const url = URL.createObjectURL(pdfBlob)
+          setPdfUrl(url)
+        }
+
+        if (!xmlText) throw new Error('No se encontró un archivo XML dentro del ZIP.')
+        await processXml(xmlText)
+
+      } else if (file.name.endsWith('.xml')) {
         const xmlText = await file.text()
-        data = parsearFacturaDIAN(xmlText)
-        if (!data || data.length === 0)
-          throw new Error('No se encontraron productos. Verifique que sea una factura electrónica DIAN válida.')
+        await processXml(xmlText)
       } else {
-        const formData = new FormData()
-        formData.append('file', file)
-        const response = await fetch(WEBHOOK_URL, { method: 'POST', body: formData })
-        if (!response.ok) throw new Error(`Error del servidor: ${response.status} ${response.statusText}`)
-        data = await response.json()
-        if (!Array.isArray(data) || data.length === 0)
-          throw new Error('El webhook no devolvió productos válidos.')
+        throw new Error('Solo se aceptan archivos .xml o .zip')
       }
-      setProducts(data.map(p => ({ ...p, margen: 30 })))
-      showToast(`✓ ${data.length} producto(s) cargados`, 'success')
     } catch (err) {
       const msg = err.message || 'No se pudo procesar la factura.'
-      setError(msg); showToast(msg, 'error', 6000)
+      setError(msg)
+      showToast(msg, 'error', 6000)
     } finally {
       setLoading(false)
     }
   }
 
-  function handleMarginChange(index, value) {
-    const val = parseFloat(value)
-    setProducts(prev => prev.map((p, i) => i === index ? { ...p, margen: isNaN(val) ? 0 : val } : p))
+  function handleUpdate(index, field, value) {
+    setProducts(prev => prev.map((p, i) => i === index ? { ...p, [field]: value } : p))
+  }
+
+  function handleIvaAll() {
+    setProducts(prev => prev.map(p => ({ ...p, tieneIva: true })))
+    showToast('IVA 19% aplicado a todos los productos', 'success')
+  }
+
+  function handleAproximarAll() {
+    setProducts(prev => prev.map(p => ({ ...p, aproximado: true })))
+    showToast('Aproximación activada para todos', 'success')
   }
 
   function handleClear() {
-    setProducts([]); setError(null); setFileName(null)
+    setProducts([]); setError(null); setFileName(null); setPdfUrl(null)
+  }
+
+  function calcPrecio(p) {
+    let precio = p.precio_unitario
+    precio = precio * (1 + p.margen / 100)
+    if (p.tieneIva) precio = precio * 1.19
+    if (p.aproximado) precio = aproximar(precio)
+    else precio = Math.round(precio)
+    return precio
   }
 
   function handleExport() {
@@ -220,12 +306,11 @@ export default function App() {
     const today = new Date()
     const fecha = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`
     const filas = products.map(p => {
-      const precioVenta = Math.round(p.subtotal * (1 + p.margen / 100))
-      const codigoInterno = numToLetras(precioVenta)
+      const precio = calcPrecio(p)
       return {
         'Nombre del producto': p.nombre,
         'Código de producto': p.codigo,
-        'Código interno': codigoInterno,
+        'Código interno': numToLetras(precio),
         'Fecha de impresión': fecha,
       }
     })
@@ -233,7 +318,7 @@ export default function App() {
     ws['!cols'] = [{ wch: 45 }, { wch: 22 }, { wch: 18 }, { wch: 20 }]
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Productos')
-    const nombreArchivo = `productos_${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}.xlsx`
+    const nombreArchivo = `liquidacion_${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}.xlsx`
     XLSX.writeFile(wb, nombreArchivo)
     showToast('✓ Excel descargado correctamente', 'success')
   }
@@ -245,32 +330,32 @@ export default function App() {
       <header className="bg-[#1a1a1a] text-white px-6 py-5">
         <div className="max-w-7xl mx-auto flex items-center justify-between flex-wrap gap-4">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight font-mono">FACTURADOR</h1>
-            <p className="text-[#aaa] text-sm font-mono tracking-widest mt-0.5">GESTIÓN DE PRECIOS · COLOMBIA</p>
+            <h1 className="text-2xl font-bold tracking-tight font-mono">LIQUIDACIONES ALMACEN EL ACERO</h1>
+            <p className="text-[#aaa] text-sm font-mono tracking-widest mt-0.5">Nayibe Talero</p>
           </div>
-          <div className="flex items-center gap-4 flex-wrap">
-            <div className="flex border-2 border-[#444] text-sm font-mono overflow-hidden">
-              <button onClick={() => setModo('local')}
-                className={`px-4 py-2 transition-colors ${modo === 'local' ? 'bg-white text-[#1a1a1a] font-semibold' : 'text-[#aaa] hover:text-white'}`}>
-                📂 Local
-              </button>
-              <button onClick={() => setModo('webhook')}
-                className={`px-4 py-2 transition-colors ${modo === 'webhook' ? 'bg-white text-[#1a1a1a] font-semibold' : 'text-[#aaa] hover:text-white'}`}>
-                🌐 n8n
-              </button>
-            </div>
-            {hasProducts && <span className="font-mono text-[#aaa] text-sm">{products.length} producto{products.length !== 1 ? 's' : ''}</span>}
-          </div>
+          {hasProducts && (
+            <span className="font-mono text-[#aaa] text-sm">{products.length} producto{products.length !== 1 ? 's' : ''}</span>
+          )}
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-10 space-y-8">
-        {modo === 'local'
-          ? <div className="bg-[#f0fdf4] border border-[#86efac] px-5 py-3 text-sm font-mono text-[#1a6b3c]">✓ Modo local — el XML se lee directamente en el navegador, sin enviar a ningún servidor.</div>
-          : <div className="bg-[#fffbe6] border border-[#d4a017] px-5 py-3 text-sm font-mono text-[#7a5200]">🌐 Modo n8n — enviando a: <strong>{WEBHOOK_URL}</strong></div>
-        }
 
         <UploadZone onFile={handleFile} loading={loading} />
+
+        {/* Vista previa PDF */}
+        {pdfUrl && (
+          <div className="border-2 border-[#1a1a1a] bg-white fade-in">
+            <div className="bg-[#1a1a1a] text-white px-4 py-2 flex items-center justify-between">
+              <span className="font-mono text-sm">Vista previa — Factura PDF</span>
+              <button onClick={() => window.open(pdfUrl, '_blank')}
+                className="text-xs font-mono text-[#aaa] hover:text-white transition-colors">
+                Abrir en pestaña nueva ↗
+              </button>
+            </div>
+            <iframe src={pdfUrl} className="w-full" style={{ height: '500px' }} title="Factura PDF" />
+          </div>
+        )}
 
         {error && !loading && (
           <div className="bg-[#fdf2f2] border-l-4 border-[#c0392b] px-6 py-5 fade-in">
@@ -281,29 +366,47 @@ export default function App() {
 
         {hasProducts && (
           <section className="space-y-4 fade-in">
+            {/* Barra de acciones globales */}
             <div className="flex gap-3 flex-wrap items-center">
-              <div className="bg-[#f0fdf4] border border-[#86efac] px-4 py-2 font-mono text-sm text-[#1a6b3c]">● Precio venta y código calculados automáticamente</div>
-              <div className="bg-white border border-[#e0ddd5] px-4 py-2 font-mono text-sm text-[#888]">Margen por defecto: 30%</div>
+              <div className="bg-[#f0fdf4] border border-[#86efac] px-4 py-2 font-mono text-sm text-[#1a6b3c]">
+                ● Precio calculado sobre precio unitario
+              </div>
+              <button onClick={handleIvaAll}
+                className="px-4 py-2 border-2 border-[#2980b9] text-[#2980b9] font-semibold text-sm font-mono hover:bg-[#2980b9] hover:text-white transition-colors">
+                + IVA 19% a todos
+              </button>
+              <button onClick={handleAproximarAll}
+                className="px-4 py-2 border-2 border-[#8e44ad] text-[#8e44ad] font-semibold text-sm font-mono hover:bg-[#8e44ad] hover:text-white transition-colors">
+                ↑ Aproximar todos
+              </button>
             </div>
+
             <div className="border-2 border-[#1a1a1a] bg-white overflow-x-auto">
-              <table className="w-full border-collapse min-w-[900px]">
+              <table className="w-full border-collapse min-w-[1050px]">
                 <thead>
                   <tr>
-                    {['Producto', 'Código', 'Cant.', 'Precio compra', 'Margen (%)', 'Precio venta', 'Código letras'].map(h => (
-                      <th key={h} className="table-header">{h}</th>
-                    ))}
+                    <th className="table-header">Producto</th>
+                    <th className="table-header">Código</th>
+                    <th className="table-header">Cant.</th>
+                    <th className="table-header">Precio unitario</th>
+                    <th className="table-header">Margen (%)</th>
+                    <th className="table-header">IVA</th>
+                    <th className="table-header">Aprox.</th>
+                    <th className="table-header">Precio venta</th>
+                    <th className="table-header">Código letras</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {products.map((p, i) => <ProductRow key={i} product={p} index={i} onMarginChange={handleMarginChange} />)}
+                  {products.map((p, i) => (
+                    <ProductRow key={i} product={p} index={i} onUpdate={handleUpdate} />
+                  ))}
                 </tbody>
               </table>
             </div>
+
             <div className="flex gap-3 flex-wrap pt-2">
-              <button
-                onClick={handleExport}
-                className="flex items-center gap-2 font-semibold text-base px-6 py-3 border-2 border-[#1a6b3c] text-[#1a6b3c] bg-transparent transition-all duration-200 hover:bg-[#1a6b3c] hover:text-white cursor-pointer"
-              >
+              <button onClick={handleExport}
+                className="flex items-center gap-2 font-semibold text-base px-6 py-3 border-2 border-[#1a6b3c] text-[#1a6b3c] bg-transparent transition-all duration-200 hover:bg-[#1a6b3c] hover:text-white cursor-pointer">
                 <IconExcel /> Imprimir / Excel
               </button>
               <button className="btn-danger flex items-center gap-2" onClick={handleClear}>
@@ -314,7 +417,9 @@ export default function App() {
         )}
 
         {!hasProducts && !loading && !error && (
-          <div className="text-center py-8"><p className="text-[#aaa] font-mono text-base tracking-wide">Suba una factura XML para comenzar</p></div>
+          <div className="text-center py-8">
+            <p className="text-[#aaa] font-mono text-base tracking-wide">Suba una factura XML o ZIP para comenzar</p>
+          </div>
         )}
 
         {hasProducts && (
@@ -335,7 +440,7 @@ export default function App() {
 
       <footer className="border-t border-[#e0ddd5] mt-16 py-6 px-6">
         <div className="max-w-7xl mx-auto">
-          <p className="text-[#aaa] font-mono text-xs">FACTURADOR v2.0 · Compatible con facturas electrónicas DIAN Colombia</p>
+          <p className="text-[#aaa] font-mono text-xs">LIQUIDACIONES ALMACEN EL ACERO · Compatible con facturas electrónicas DIAN Colombia</p>
         </div>
       </footer>
 
