@@ -85,6 +85,11 @@ function aproximar(n) {
   return Math.ceil(n / 1000) * 1000
 }
 
+// Normaliza texto para búsqueda: minúsculas y sin tildes
+function normalizar(s) {
+  return String(s).toLowerCase().normalize('NFD').replace(new RegExp('[\\u0300-\\u036f]', 'g'), '')
+}
+
 // ─── Icons ────────────────────────────────────────────────────────────────────
 function IconUpload() {
   return (
@@ -155,7 +160,7 @@ function UploadZone({ onFile, loading }) {
 }
 
 // ─── Product Row ──────────────────────────────────────────────────────────────
-function ProductRow({ product, index, onUpdate }) {
+function ProductRow({ product, index, origIndex, onUpdate, rowRef, highlighted }) {
   const { nombre, codigo, cantidad, precio_unitario, margen, iva_percent, aproximado } = product
 
   // Base: precio unitario
@@ -169,7 +174,7 @@ function ProductRow({ product, index, onUpdate }) {
   const codigoLetras = numToLetras(precio)
 
   return (
-    <tr className={index % 2 === 0 ? 'row-even' : 'row-odd'}>
+    <tr ref={rowRef} className={`${highlighted ? 'row-highlight ' : ''}${index % 2 === 0 ? 'row-even' : 'row-odd'}`}>
       <td className="table-cell font-semibold text-sm">{nombre}</td>
       <td className="table-cell font-mono text-[#555] text-sm">{codigo}</td>
       <td className="table-cell text-center font-mono font-semibold">{cantidad}</td>
@@ -177,7 +182,7 @@ function ProductRow({ product, index, onUpdate }) {
       <td className="table-cell">
         <div className="flex items-center gap-1">
           <input type="number" min="0" max="999" value={margen}
-            onChange={(e) => onUpdate(index, 'margen', parseFloat(e.target.value) || 0)}
+            onChange={(e) => onUpdate(origIndex, 'margen', parseFloat(e.target.value) || 0)}
             className="margin-input" />
           <span className="text-[#999] font-mono text-xs">%</span>
         </div>
@@ -190,7 +195,7 @@ function ProductRow({ product, index, onUpdate }) {
       <td className="table-cell">
         <label className="flex items-center gap-2 cursor-pointer">
           <input type="checkbox" checked={aproximado}
-            onChange={(e) => onUpdate(index, 'aproximado', e.target.checked)}
+            onChange={(e) => onUpdate(origIndex, 'aproximado', e.target.checked)}
             className="w-4 h-4 cursor-pointer accent-[#1a6b3c]" />
           <span className="text-xs font-mono text-[#555]">↑1000</span>
         </label>
@@ -217,6 +222,13 @@ export default function App() {
   const [fileName, setFileName] = useState(null)
   const [pdfUrl, setPdfUrl] = useState(null)
   const [margenGlobal, setMargenGlobal] = useState('')
+  // ─── Filtro: búsqueda + ordenamiento ───
+  const [busqueda, setBusqueda] = useState('')
+  const [orden, setOrden] = useState('original')
+  const [invertido, setInvertido] = useState(false)
+  const [highlightIdx, setHighlightIdx] = useState(null)
+  const rowRefs = useRef({})
+  const highlightTimer = useRef(null)
 
   function showToast(message, type = 'info', duration = 3500) {
     setToast({ message, type })
@@ -303,6 +315,7 @@ export default function App() {
 
   function handleClear() {
     setProducts([]); setError(null); setFileName(null); setPdfUrl(null)
+    setBusqueda(''); setOrden('original'); setInvertido(false); setHighlightIdx(null)
   }
 
   function calcPrecio(p) {
@@ -312,6 +325,53 @@ export default function App() {
     else precio = Math.round(precio)
     return precio
   }
+
+  // ─── Búsqueda tipo Ctrl+F: coincidencias ordenadas por relevancia ───
+  const coincidencias = (() => {
+    const q = normalizar(busqueda.trim())
+    if (!q) return []
+    return products
+      .map((p, idx) => {
+        const nombre = normalizar(p.nombre)
+        const codigo = normalizar(p.codigo)
+        let score = -1
+        if (nombre.startsWith(q)) score = 0
+        else if (nombre.split(/[\s,./-]+/).some(w => w.startsWith(q))) score = 1
+        else if (nombre.includes(q)) score = 2
+        else if (codigo.includes(q)) score = 3
+        return { p, idx, score }
+      })
+      .filter(c => c.score >= 0)
+      .sort((a, b) => a.score - b.score || a.p.nombre.localeCompare(b.p.nombre))
+      .slice(0, 8)
+  })()
+
+  function irAProducto(idx) {
+    setBusqueda('')
+    setHighlightIdx(idx)
+    // El scroll se hace tras el render para que la fila exista en su posición actual
+    requestAnimationFrame(() => {
+      rowRefs.current[idx]?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+    clearTimeout(highlightTimer.current)
+    highlightTimer.current = setTimeout(() => setHighlightIdx(null), 2600)
+  }
+
+  // ─── Vista ordenada (no modifica el orden interno de products) ───
+  const vista = (() => {
+    const arr = products.map((p, idx) => ({ p, idx }))
+    const comparadores = {
+      nombre: (a, b) => a.p.nombre.localeCompare(b.p.nombre, 'es'),
+      cantidad: (a, b) => b.p.cantidad - a.p.cantidad,
+      precio_unitario: (a, b) => b.p.precio_unitario - a.p.precio_unitario,
+      precio_venta: (a, b) => calcPrecio(b.p) - calcPrecio(a.p),
+      iva: (a, b) => b.p.iva_percent - a.p.iva_percent,
+      margen: (a, b) => b.p.margen - a.p.margen,
+    }
+    if (comparadores[orden]) arr.sort(comparadores[orden])
+    if (invertido) arr.reverse()
+    return arr
+  })()
 
   function handleExport() {
     if (!products.length) return
@@ -400,6 +460,54 @@ export default function App() {
                 className="px-4 py-2 border-2 border-[#8e44ad] text-[#8e44ad] font-semibold text-sm font-mono hover:bg-[#8e44ad] hover:text-white transition-colors">
                 ↑ Aproximar todos
               </button>
+
+              {/* ─── Filtro (alineado a la derecha) ─── */}
+              <div className="ml-auto flex items-center gap-2 flex-wrap">
+                {/* Buscador tipo Ctrl+F */}
+                <div className="relative">
+                  <input
+                    type="text" placeholder="🔍 Buscar producto..." value={busqueda}
+                    onChange={(e) => setBusqueda(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && coincidencias.length > 0) irAProducto(coincidencias[0].idx)
+                      if (e.key === 'Escape') setBusqueda('')
+                    }}
+                    className="w-56 px-3 py-2 border-2 border-[#1a1a1a] bg-white font-mono text-sm outline-none focus:border-[#2980b9] transition-colors"
+                  />
+                  {busqueda.trim() !== '' && (
+                    <div className="absolute top-full right-0 mt-1 w-96 max-w-[90vw] bg-white border-2 border-[#1a1a1a] shadow-xl z-30 max-h-80 overflow-y-auto">
+                      {coincidencias.length === 0 ? (
+                        <p className="px-4 py-3 text-sm font-mono text-[#999]">Sin coincidencias</p>
+                      ) : (
+                        coincidencias.map(({ p, idx }) => (
+                          <button key={idx} onClick={() => irAProducto(idx)}
+                            className="w-full text-left px-4 py-2.5 hover:bg-[#fffbe6] border-b border-[#eee] last:border-b-0 transition-colors">
+                            <span className="block text-sm font-semibold text-[#1a1a1a] truncate">{p.nombre}</span>
+                            <span className="block text-xs font-mono text-[#999]">{p.codigo} · {formatCOP(p.precio_unitario)} · {p.cantidad} und</span>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+                {/* Ordenar por */}
+                <select value={orden} onChange={(e) => setOrden(e.target.value)}
+                  className="px-2 py-2 border-2 border-[#1a1a1a] bg-white font-mono text-sm cursor-pointer outline-none focus:border-[#2980b9]">
+                  <option value="original">Orden factura</option>
+                  <option value="nombre">Nombre (A→Z)</option>
+                  <option value="cantidad">Cantidad (mayor 1º)</option>
+                  <option value="precio_unitario">P. unitario (mayor 1º)</option>
+                  <option value="precio_venta">P. venta (mayor 1º)</option>
+                  <option value="margen">Margen (mayor 1º)</option>
+                  <option value="iva">IVA (mayor 1º)</option>
+                </select>
+                {/* Invertidor del orden seleccionado */}
+                <button onClick={() => setInvertido(v => !v)}
+                  title="Invertir el orden seleccionado"
+                  className={`px-3 py-2 border-2 border-[#1a1a1a] font-mono text-sm font-semibold transition-colors ${invertido ? 'bg-[#1a1a1a] text-white' : 'bg-white text-[#1a1a1a] hover:bg-[#1a1a1a] hover:text-white'}`}>
+                  ⇅
+                </button>
+              </div>
             </div>
 
             <div className="border-2 border-[#1a1a1a] bg-white overflow-x-auto">
@@ -418,8 +526,10 @@ export default function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {products.map((p, i) => (
-                    <ProductRow key={i} product={p} index={i} onUpdate={handleUpdate} />
+                  {vista.map(({ p, idx }, i) => (
+                    <ProductRow key={idx} product={p} index={i} origIndex={idx} onUpdate={handleUpdate}
+                      rowRef={(el) => { rowRefs.current[idx] = el }}
+                      highlighted={highlightIdx === idx} />
                   ))}
                 </tbody>
               </table>

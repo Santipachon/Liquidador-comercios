@@ -88,6 +88,16 @@
     background-color: #faf9f6;
   }
 
+  .row-highlight {
+    animation: highlightFlash 2.5s ease forwards;
+  }
+
+  @keyframes highlightFlash {
+    0% { background-color: #fde68a; }
+    70% { background-color: #fde68a; }
+    100% { background-color: transparent; }
+  }
+
   .fade-in {
     animation: fadeIn 0.4s ease forwards;
   }
