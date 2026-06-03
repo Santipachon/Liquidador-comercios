@@ -65,8 +65,8 @@ function formatCOP(n) {
 }
 
 function aproximar(n) {
-  // Aproxima al siguiente múltiplo de 100
-  return Math.ceil(n / 100) * 100
+  // Aproxima al siguiente múltiplo de 1.000 (ej: 13.250 → 14.000)
+  return Math.ceil(n / 1000) * 1000
 }
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
@@ -181,7 +181,7 @@ function ProductRow({ product, index, onUpdate }) {
           <input type="checkbox" checked={aproximado}
             onChange={(e) => onUpdate(index, 'aproximado', e.target.checked)}
             className="w-4 h-4 cursor-pointer accent-[#1a6b3c]" />
-          <span className="text-xs font-mono text-[#555]">↑100</span>
+          <span className="text-xs font-mono text-[#555]">↑1000</span>
         </label>
       </td>
       <td className="table-cell"><span className="calculated-cell">{formatCOP(precio)}</span></td>
@@ -285,7 +285,7 @@ export default function App() {
 
   function handleAproximarAll() {
     setProducts(prev => prev.map(p => ({ ...p, aproximado: true })))
-    showToast('Aproximación activada para todos', 'success')
+    showToast('Aproximación a 1.000 activada para todos', 'success')
   }
 
   function handleClear() {
