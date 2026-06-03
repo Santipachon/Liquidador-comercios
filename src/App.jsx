@@ -8,6 +8,82 @@ const LETRA_MAP = {
   6: 'L', 7: 'I', 8: 'C', 9: 'A', 0: 'S',
 }
 
+// Tabla de proveedores del almacén: el NIT identifica la sigla a asignar
+const PROVEEDORES = [
+  { nombre: 'JULIO RAMIREZ', sigla: 'JR', nit: '19141690-6' },
+  { nombre: 'DAGO', sigla: 'DG', nit: '901626462-5' },
+  { nombre: 'SANTOS HIGUERA', sigla: 'SH', nit: '7213967-7' },
+  { nombre: 'RODACOL', sigla: 'RD', nit: '860015737-5' },
+  { nombre: 'INTERTRAM', sigla: 'INT', nit: '860516860-3' },
+  { nombre: 'IMPORTACIONES INTERTRAM', sigla: 'INT', nit: '830126983-8' },
+  { nombre: 'GRUPO COLOMBIANO FERRETERO SAS', sigla: 'COLF', nit: '900396456-8' },
+  { nombre: 'LUBRIECONOMICOS', sigla: 'LECO', nit: '901358696-1' },
+  { nombre: 'MULTIFILTROS MOTORLUB', sigla: 'MULTIF', nit: '804004105-1' },
+  { nombre: 'MOTOR KOTE SONIA GARCIA', sigla: 'MOTORK', nit: '23350702' },
+  { nombre: 'LUBESOL', sigla: 'LB', nit: '900387475-0' },
+  { nombre: 'TECNIGRAPAS', sigla: 'TG', nit: '860403249-7' },
+  { nombre: 'IMPORTADORA LA HORMIGA', sigla: 'HG', nit: '900538118-5' },
+  { nombre: 'SOLHICOL', sigla: 'SOLH', nit: '901148180-2' },
+  { nombre: 'JAIME CASTAÑO', sigla: 'JC', nit: '901790667-9' },
+  { nombre: 'EMPACAR LIMITADA', sigla: 'EMP', nit: '860060222-5' },
+  { nombre: 'RODAMUNDI', sigla: 'RM', nit: '830115250-0' },
+  { nombre: 'DYNA', sigla: 'DY', nit: '890901298-3' },
+  { nombre: 'MUNDIAL DE TORNILLOS SA', sigla: 'MT', nit: '830057186-8' },
+  { nombre: 'CI FILTERS SAS', sigla: 'CIF', nit: '900528407-6' },
+  { nombre: 'INMAGRO (CHUMAZERAS)', sigla: 'ING', nit: '901470900-8' },
+  { nombre: 'JAVIER H', sigla: 'JH', nit: '901786153' },
+  { nombre: 'GRASAS Y LUBRICANTES DE COLOMBIA', sigla: 'GYL', nit: '901229341-1' },
+  { nombre: 'MARKEM', sigla: 'MK', nit: '900588708-4' },
+  { nombre: 'DIELCO ELECTRIC', sigla: 'DIELC', nit: '830081566' },
+  { nombre: 'FERREIMPORTACIONES MAX LTD.', sigla: 'FMX', nit: '900203050-5' },
+  { nombre: 'SELLOS Y SUMINISTROS', sigla: 'SYS', nit: '901212603' },
+  { nombre: 'AUTOPERNOS', sigla: 'AUTP', nit: '17054684-1' },
+  { nombre: 'EL RODAMIENTO', sigla: 'ELRD', nit: '890700877-55' },
+]
+
+// Compara dos NIT tolerando guion, dígito de verificación (DV) y DV pegado al final.
+// Genera las variantes completas de cada NIT (con DV, sin DV) y exige igualdad
+// exacta entre variantes — así un NIT incompleto o distinto NUNCA coincide.
+function nitsCoinciden(a, b) {
+  const variantes = (raw) => {
+    const s = String(raw).trim()
+    const digits = s.replace(/\D/g, '')
+    const v = new Set()
+    if (digits.length >= 7) v.add(digits)
+    if (s.includes('-')) {
+      // Con guion: la parte antes del guion es el NIT base
+      const base = s.split('-')[0].replace(/\D/g, '')
+      if (base.length >= 7) v.add(base)
+    } else if (digits.length >= 8) {
+      // Sin guion: puede traer el DV pegado al final
+      v.add(digits.slice(0, -1))
+    }
+    return v
+  }
+  const va = variantes(a)
+  for (const x of variantes(b)) if (va.has(x)) return true
+  return false
+}
+
+// Extrae NIT y nombre del proveedor (emisor) de la factura DIAN
+function extraerProveedor(xmlText) {
+  const bloque =
+    (xmlText.match(/<cac:AccountingSupplierParty>[\s\S]*?<\/cac:AccountingSupplierParty>/i) || [])[0] ||
+    (xmlText.match(/<cac:SenderParty>[\s\S]*?<\/cac:SenderParty>/i) || [])[0] || ''
+  const nitMatch = bloque.match(/<cbc:CompanyID[^>]*>([^<]+)<\/cbc:CompanyID>/i)
+  const nombreMatch = bloque.match(/<cbc:RegistrationName[^>]*>([^<]+)<\/cbc:RegistrationName>/i)
+  return {
+    nit: nitMatch ? nitMatch[1].trim() : '',
+    nombre: nombreMatch ? nombreMatch[1].trim() : '',
+  }
+}
+
+// Busca el proveedor en la tabla por NIT; null si no hay coincidencia segura
+function matchProveedor(nit) {
+  if (!nit) return null
+  return PROVEEDORES.find(p => nitsCoinciden(p.nit, nit)) || null
+}
+
 // ─── Parser XML DIAN ──────────────────────────────────────────────────────────
 function parsearFacturaDIAN(xmlText) {
   let xmlFactura = xmlText
@@ -239,6 +315,9 @@ export default function App() {
   const [highlightIdx, setHighlightIdx] = useState(null)
   const rowRefs = useRef({})
   const highlightTimer = useRef(null)
+  // ─── Sigla del proveedor (código interno del almacén) ───
+  const [siglaFactura, setSiglaFactura] = useState('')
+  const [proveedorXml, setProveedorXml] = useState(null) // { nit, nombre } leído del XML
 
   function showToast(message, type = 'info', duration = 3500) {
     setToast({ message, type })
@@ -255,7 +334,21 @@ export default function App() {
       aproximado: false,
       revisado: false,
     })))
-    showToast(`✓ ${data.length} producto(s) cargados`, 'success')
+
+    // Detectar proveedor por NIT y asignar la sigla del almacén automáticamente
+    const prov = extraerProveedor(xmlText)
+    setProveedorXml(prov.nit || prov.nombre ? prov : null)
+    const conocido = matchProveedor(prov.nit)
+    setSiglaFactura(conocido ? conocido.sigla : '')
+
+    if (conocido) {
+      showToast(`✓ ${data.length} producto(s) · Proveedor: ${conocido.sigla} (${conocido.nombre})`, 'success', 5000)
+    } else {
+      showToast(`✓ ${data.length} producto(s) cargados`, 'success')
+      setTimeout(() => {
+        showToast(`⚠ Proveedor no reconocido${prov.nit ? ` (NIT ${prov.nit})` : ''} — asigne la sigla en el resumen`, 'error', 6000)
+      }, 1800)
+    }
   }
 
   async function handleFile(file) {
@@ -328,6 +421,7 @@ export default function App() {
     setProducts([]); setError(null); setFileName(null); setPdfUrl(null)
     setBusqueda(''); setSortCol(null); setSortDir('nat'); setHighlightIdx(null)
     setPrecioMin(''); setPrecioMax('')
+    setSiglaFactura(''); setProveedorXml(null)
   }
 
   function calcPrecio(p) {
@@ -431,7 +525,7 @@ export default function App() {
       const precio = calcPrecio(p)
       return {
         'Nombre del producto': p.nombre,
-        'Código de producto': p.codigo,
+        'Código de Proveedor': siglaFactura.trim().toUpperCase(),
         'Código interno': numToLetras(precio),
         'Fecha de impresión': fecha,
       }
@@ -443,6 +537,11 @@ export default function App() {
     const nombreArchivo = `liquidacion_${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}.xlsx`
     XLSX.writeFile(wb, nombreArchivo)
     showToast('✓ Excel descargado correctamente', 'success')
+    if (!siglaFactura.trim()) {
+      setTimeout(() => {
+        showToast('⚠ El Excel salió SIN sigla de proveedor — asígnela en el resumen y vuelva a exportar', 'error', 6000)
+      }, 1800)
+    }
   }
 
   const hasProducts = products.length > 0
@@ -612,6 +711,22 @@ export default function App() {
             <div className="border-t-2 border-[#1a1a1a] pt-4">
               <p className="text-sm font-mono font-semibold text-[#555] uppercase tracking-widest mb-3">Resumen de la factura</p>
               <div className="flex flex-wrap gap-3">
+                {/* Sigla del proveedor: asignada automáticamente por NIT, editable */}
+                <div className={`px-4 py-2.5 min-w-[180px] border-2 ${siglaFactura.trim() ? 'border-[#1a6b3c] bg-[#f0fdf4]' : 'border-[#d4a017] bg-[#fffbe6]'}`}>
+                  <p className="text-[10px] font-mono uppercase tracking-widest text-[#999] mb-0.5">Sigla proveedor (editable)</p>
+                  <input
+                    type="text" value={siglaFactura} list="lista-siglas"
+                    onChange={(e) => setSiglaFactura(e.target.value.toUpperCase())}
+                    placeholder="ASIGNAR..."
+                    className="w-full bg-transparent font-mono font-bold text-base text-[#1a1a1a] outline-none uppercase placeholder:text-[#d4a017] placeholder:font-normal"
+                  />
+                  <datalist id="lista-siglas">
+                    {PROVEEDORES.map((p, i) => <option key={i} value={p.sigla}>{p.nombre}</option>)}
+                  </datalist>
+                  <p className="text-[10px] font-mono text-[#999] mt-0.5 truncate" title={proveedorXml ? `${proveedorXml.nombre} · NIT ${proveedorXml.nit}` : ''}>
+                    {proveedorXml ? `${proveedorXml.nombre || 'NIT'} · ${proveedorXml.nit}` : 'Sin datos del emisor en el XML'}
+                  </p>
+                </div>
                 {[
                   ['Productos', vista.length === products.length ? products.length : `${vista.length} de ${products.length} (filtro activo)`],
                   ['Unidades', totales.unidades],
