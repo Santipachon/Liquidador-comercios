@@ -161,7 +161,7 @@ function UploadZone({ onFile, loading }) {
 
 // ─── Product Row ──────────────────────────────────────────────────────────────
 function ProductRow({ product, index, origIndex, onUpdate, rowRef, highlighted }) {
-  const { nombre, codigo, cantidad, precio_unitario, margen, iva_percent, aproximado } = product
+  const { nombre, codigo, cantidad, precio_unitario, margen, iva_percent, aproximado, revisado } = product
 
   // Base: precio unitario
   let precio = precio_unitario
@@ -174,7 +174,14 @@ function ProductRow({ product, index, origIndex, onUpdate, rowRef, highlighted }
   const codigoLetras = numToLetras(precio)
 
   return (
-    <tr ref={rowRef} className={`${highlighted ? 'row-highlight ' : ''}${index % 2 === 0 ? 'row-even' : 'row-odd'}`}>
+    <tr ref={rowRef} className={`${highlighted ? 'row-highlight ' : ''}${revisado ? 'row-revisado' : index % 2 === 0 ? 'row-even' : 'row-odd'}`}>
+      <td className="table-cell text-center">
+        <button onClick={() => onUpdate(origIndex, 'revisado', !revisado)}
+          title={revisado ? 'Desmarcar revisado' : 'Marcar como revisado'}
+          className={`w-7 h-7 border-2 font-bold text-sm leading-none transition-colors ${revisado ? 'bg-[#1a6b3c] border-[#1a6b3c] text-white' : 'bg-white border-[#ccc] text-transparent hover:border-[#1a6b3c] hover:text-[#86efac]'}`}>
+          ✓
+        </button>
+      </td>
       <td className="table-cell font-semibold text-sm">{nombre}</td>
       <td className="table-cell font-mono text-[#555] text-sm">{codigo}</td>
       <td className="table-cell text-center font-mono font-semibold">{cantidad}</td>
@@ -222,10 +229,13 @@ export default function App() {
   const [fileName, setFileName] = useState(null)
   const [pdfUrl, setPdfUrl] = useState(null)
   const [margenGlobal, setMargenGlobal] = useState('')
-  // ─── Filtro: búsqueda + ordenamiento ───
+  // ─── Filtro: búsqueda + ordenamiento por columna + rango de precio ───
   const [busqueda, setBusqueda] = useState('')
-  const [orden, setOrden] = useState('original')
-  const [invertido, setInvertido] = useState(false)
+  const [modoFiltro, setModoFiltro] = useState(false) // false = "ir a", true = ocultar no coincidentes
+  const [sortCol, setSortCol] = useState(null)        // columna activa de ordenamiento
+  const [sortDir, setSortDir] = useState('nat')       // 'nat' = natural, 'inv' = invertido
+  const [precioMin, setPrecioMin] = useState('')
+  const [precioMax, setPrecioMax] = useState('')
   const [highlightIdx, setHighlightIdx] = useState(null)
   const rowRefs = useRef({})
   const highlightTimer = useRef(null)
@@ -243,6 +253,7 @@ export default function App() {
       ...p,
       margen: 30,
       aproximado: false,
+      revisado: false,
     })))
     showToast(`✓ ${data.length} producto(s) cargados`, 'success')
   }
@@ -315,7 +326,8 @@ export default function App() {
 
   function handleClear() {
     setProducts([]); setError(null); setFileName(null); setPdfUrl(null)
-    setBusqueda(''); setOrden('original'); setInvertido(false); setHighlightIdx(null)
+    setBusqueda(''); setSortCol(null); setSortDir('nat'); setHighlightIdx(null)
+    setPrecioMin(''); setPrecioMax('')
   }
 
   function calcPrecio(p) {
@@ -357,21 +369,59 @@ export default function App() {
     highlightTimer.current = setTimeout(() => setHighlightIdx(null), 2600)
   }
 
-  // ─── Vista ordenada (no modifica el orden interno de products) ───
+  // ─── Ordenamiento por columna: rotación de 3 toques (natural → invertido → original) ───
+  function handleSort(col) {
+    if (sortCol !== col) { setSortCol(col); setSortDir('nat') }
+    else if (sortDir === 'nat') setSortDir('inv')
+    else { setSortCol(null); setSortDir('nat') }
+  }
+
+  // Dirección "natural" de cada columna: texto A→Z, números de mayor a menor
+  const comparadores = {
+    nombre: (a, b) => a.p.nombre.localeCompare(b.p.nombre, 'es'),
+    codigo: (a, b) => a.p.codigo.localeCompare(b.p.codigo, 'es'),
+    cantidad: (a, b) => b.p.cantidad - a.p.cantidad,
+    precio_unitario: (a, b) => b.p.precio_unitario - a.p.precio_unitario,
+    margen: (a, b) => b.p.margen - a.p.margen,
+    iva: (a, b) => b.p.iva_percent - a.p.iva_percent,
+    precio_venta: (a, b) => calcPrecio(b.p) - calcPrecio(a.p),
+    revisado: (a, b) => (b.p.revisado ? 1 : 0) - (a.p.revisado ? 1 : 0),
+  }
+
+  // ─── Vista: filtros + ordenamiento (no modifica el orden interno de products) ───
   const vista = (() => {
-    const arr = products.map((p, idx) => ({ p, idx }))
-    const comparadores = {
-      nombre: (a, b) => a.p.nombre.localeCompare(b.p.nombre, 'es'),
-      cantidad: (a, b) => b.p.cantidad - a.p.cantidad,
-      precio_unitario: (a, b) => b.p.precio_unitario - a.p.precio_unitario,
-      precio_venta: (a, b) => calcPrecio(b.p) - calcPrecio(a.p),
-      iva: (a, b) => b.p.iva_percent - a.p.iva_percent,
-      margen: (a, b) => b.p.margen - a.p.margen,
+    let arr = products.map((p, idx) => ({ p, idx }))
+    // Filtro por búsqueda (solo en modo ocultar)
+    const q = normalizar(busqueda.trim())
+    if (modoFiltro && q) {
+      arr = arr.filter(({ p }) => normalizar(p.nombre).includes(q) || normalizar(p.codigo).includes(q))
     }
-    if (comparadores[orden]) arr.sort(comparadores[orden])
-    if (invertido) arr.reverse()
+    // Filtro por rango de precio unitario
+    const min = parseFloat(precioMin)
+    const max = parseFloat(precioMax)
+    if (!isNaN(min)) arr = arr.filter(({ p }) => p.precio_unitario >= min)
+    if (!isNaN(max)) arr = arr.filter(({ p }) => p.precio_unitario <= max)
+    // Ordenamiento por columna activa
+    if (sortCol && comparadores[sortCol]) {
+      arr = [...arr].sort(comparadores[sortCol])
+      if (sortDir === 'inv') arr.reverse()
+    }
     return arr
   })()
+
+  // ─── Totales (siempre sobre la factura completa) ───
+  const totales = (() => {
+    let unidades = 0, costoSinIva = 0, ivaTotal = 0, ventaEstimada = 0
+    for (const p of products) {
+      unidades += p.cantidad
+      costoSinIva += p.subtotal
+      ivaTotal += p.iva
+      ventaEstimada += calcPrecio(p) * p.cantidad
+    }
+    const costoConIva = costoSinIva + ivaTotal
+    return { unidades, costoSinIva, ivaTotal, costoConIva, ventaEstimada, ganancia: ventaEstimada - costoConIva }
+  })()
+  const revisadosCount = products.filter(p => p.revisado).length
 
   function handleExport() {
     if (!products.length) return
@@ -463,66 +513,89 @@ export default function App() {
 
               {/* ─── Filtro (alineado a la derecha) ─── */}
               <div className="ml-auto flex items-center gap-2 flex-wrap">
-                {/* Buscador tipo Ctrl+F */}
-                <div className="relative">
-                  <input
-                    type="text" placeholder="🔍 Buscar producto..." value={busqueda}
-                    onChange={(e) => setBusqueda(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && coincidencias.length > 0) irAProducto(coincidencias[0].idx)
-                      if (e.key === 'Escape') setBusqueda('')
-                    }}
-                    className="w-56 px-3 py-2 border-2 border-[#1a1a1a] bg-white font-mono text-sm outline-none focus:border-[#2980b9] transition-colors"
-                  />
-                  {busqueda.trim() !== '' && (
-                    <div className="absolute top-full right-0 mt-1 w-96 max-w-[90vw] bg-white border-2 border-[#1a1a1a] shadow-xl z-30 max-h-80 overflow-y-auto">
-                      {coincidencias.length === 0 ? (
-                        <p className="px-4 py-3 text-sm font-mono text-[#999]">Sin coincidencias</p>
-                      ) : (
-                        coincidencias.map(({ p, idx }) => (
-                          <button key={idx} onClick={() => irAProducto(idx)}
-                            className="w-full text-left px-4 py-2.5 hover:bg-[#fffbe6] border-b border-[#eee] last:border-b-0 transition-colors">
-                            <span className="block text-sm font-semibold text-[#1a1a1a] truncate">{p.nombre}</span>
-                            <span className="block text-xs font-mono text-[#999]">{p.codigo} · {formatCOP(p.precio_unitario)} · {p.cantidad} und</span>
-                          </button>
-                        ))
-                      )}
-                    </div>
+                {/* Buscador tipo Ctrl+F con modo "ir a" / "ocultar" */}
+                <div className="flex items-center">
+                  <div className="relative">
+                    <input
+                      type="text" placeholder="🔍 Buscar producto..." value={busqueda}
+                      onChange={(e) => setBusqueda(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !modoFiltro && coincidencias.length > 0) irAProducto(coincidencias[0].idx)
+                        if (e.key === 'Escape') setBusqueda('')
+                      }}
+                      className="w-56 px-3 py-2 border-2 border-r-0 border-[#1a1a1a] bg-white font-mono text-sm outline-none focus:border-[#2980b9] transition-colors"
+                    />
+                    {!modoFiltro && busqueda.trim() !== '' && (
+                      <div className="absolute top-full right-0 mt-1 w-96 max-w-[90vw] bg-white border-2 border-[#1a1a1a] shadow-xl z-30 max-h-80 overflow-y-auto">
+                        {coincidencias.length === 0 ? (
+                          <p className="px-4 py-3 text-sm font-mono text-[#999]">Sin coincidencias</p>
+                        ) : (
+                          coincidencias.map(({ p, idx }) => (
+                            <button key={idx} onClick={() => irAProducto(idx)}
+                              className="w-full text-left px-4 py-2.5 hover:bg-[#fffbe6] border-b border-[#eee] last:border-b-0 transition-colors">
+                              <span className="block text-sm font-semibold text-[#1a1a1a] truncate">{p.nombre}</span>
+                              <span className="block text-xs font-mono text-[#999]">{p.codigo} · {formatCOP(p.precio_unitario)} · {p.cantidad} und</span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <button onClick={() => setModoFiltro(v => !v)}
+                    title={modoFiltro ? 'Modo actual: ocultar productos que no coinciden. Clic para cambiar a "ir al producto"' : 'Modo actual: ir al producto. Clic para cambiar a "ocultar los que no coinciden"'}
+                    className={`px-3 py-2 border-2 border-[#1a1a1a] font-mono text-sm font-semibold whitespace-nowrap transition-colors ${modoFiltro ? 'bg-[#1a1a1a] text-white' : 'bg-white text-[#1a1a1a] hover:bg-[#1a1a1a] hover:text-white'}`}>
+                    {modoFiltro ? '👁 Ocultar' : '→ Ir a'}
+                  </button>
+                </div>
+                {/* Filtro por rango de precio unitario */}
+                <div className="flex items-center border-2 border-[#1a1a1a] bg-white font-mono text-sm" title="Mostrar solo productos con precio unitario dentro del rango">
+                  <span className="pl-2 pr-1 text-[#999]">$</span>
+                  <input type="number" min="0" placeholder="mín" value={precioMin}
+                    onChange={(e) => setPrecioMin(e.target.value)}
+                    className="w-20 py-2 outline-none text-center placeholder:text-[#bbb]" />
+                  <span className="text-[#999]">—</span>
+                  <input type="number" min="0" placeholder="máx" value={precioMax}
+                    onChange={(e) => setPrecioMax(e.target.value)}
+                    className="w-20 py-2 outline-none text-center placeholder:text-[#bbb]" />
+                  {(precioMin !== '' || precioMax !== '') && (
+                    <button onClick={() => { setPrecioMin(''); setPrecioMax('') }}
+                      title="Quitar filtro de precio"
+                      className="px-2 py-2 text-[#c0392b] font-bold hover:bg-[#fdf2f2] transition-colors">×</button>
                   )}
                 </div>
-                {/* Ordenar por */}
-                <select value={orden} onChange={(e) => setOrden(e.target.value)}
-                  className="px-2 py-2 border-2 border-[#1a1a1a] bg-white font-mono text-sm cursor-pointer outline-none focus:border-[#2980b9]">
-                  <option value="original">Orden factura</option>
-                  <option value="nombre">Nombre (A→Z)</option>
-                  <option value="cantidad">Cantidad (mayor 1º)</option>
-                  <option value="precio_unitario">P. unitario (mayor 1º)</option>
-                  <option value="precio_venta">P. venta (mayor 1º)</option>
-                  <option value="margen">Margen (mayor 1º)</option>
-                  <option value="iva">IVA (mayor 1º)</option>
-                </select>
-                {/* Invertidor del orden seleccionado */}
-                <button onClick={() => setInvertido(v => !v)}
-                  title="Invertir el orden seleccionado"
-                  className={`px-3 py-2 border-2 border-[#1a1a1a] font-mono text-sm font-semibold transition-colors ${invertido ? 'bg-[#1a1a1a] text-white' : 'bg-white text-[#1a1a1a] hover:bg-[#1a1a1a] hover:text-white'}`}>
-                  ⇅
-                </button>
               </div>
             </div>
 
             <div className="border-2 border-[#1a1a1a] bg-white overflow-x-auto">
-              <table className="w-full border-collapse min-w-[1050px]">
+              <table className="w-full border-collapse min-w-[1100px]">
                 <thead>
                   <tr>
-                    <th className="table-header">Producto</th>
-                    <th className="table-header">Código</th>
-                    <th className="table-header">Cant.</th>
-                    <th className="table-header">Precio unitario</th>
-                    <th className="table-header">Margen (%)</th>
-                    <th className="table-header">IVA factura</th>
-                    <th className="table-header">Aprox.</th>
-                    <th className="table-header">Precio venta</th>
-                    <th className="table-header">Código letras</th>
+                    {[
+                      ['revisado', '✓'],
+                      ['nombre', 'Producto'],
+                      ['codigo', 'Código'],
+                      ['cantidad', 'Cant.'],
+                      ['precio_unitario', 'Precio unitario'],
+                      ['margen', 'Margen (%)'],
+                      ['iva', 'IVA factura'],
+                      [null, 'Aprox.'],
+                      ['precio_venta', 'Precio venta'],
+                      [null, 'Código letras'],
+                    ].map(([col, label]) => (
+                      <th key={label}
+                        onClick={col ? () => handleSort(col) : undefined}
+                        title={col ? 'Clic: ordenar · 2º clic: invertir · 3º clic: orden original' : undefined}
+                        className={`table-header select-none ${col ? 'cursor-pointer hover:bg-[#333] transition-colors' : ''}`}>
+                        <span className="flex items-center gap-1.5">
+                          {label}
+                          {col && (
+                            <span className={sortCol === col ? 'text-[#fde68a]' : 'text-[#555]'}>
+                              {sortCol === col ? (sortDir === 'nat' ? '▼' : '▲') : '↕'}
+                            </span>
+                          )}
+                        </span>
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
@@ -533,6 +606,29 @@ export default function App() {
                   ))}
                 </tbody>
               </table>
+            </div>
+
+            {/* ─── Resumen de la factura (siempre sobre el total, no sobre lo filtrado) ─── */}
+            <div className="border-t-2 border-[#1a1a1a] pt-4">
+              <p className="text-sm font-mono font-semibold text-[#555] uppercase tracking-widest mb-3">Resumen de la factura</p>
+              <div className="flex flex-wrap gap-3">
+                {[
+                  ['Productos', vista.length === products.length ? products.length : `${vista.length} de ${products.length} (filtro activo)`],
+                  ['Unidades', totales.unidades],
+                  ['Costo sin IVA', formatCOP(totales.costoSinIva)],
+                  ['IVA factura', formatCOP(totales.ivaTotal)],
+                  ['Costo total (c/IVA)', formatCOP(totales.costoConIva)],
+                  ['Venta estimada', formatCOP(totales.ventaEstimada)],
+                  ['Ganancia estimada', formatCOP(totales.ganancia)],
+                  ['Revisados', `${revisadosCount} / ${products.length}`],
+                ].map(([label, value]) => (
+                  <div key={label} className="bg-white border border-[#e0ddd5] px-4 py-2.5 min-w-[130px]">
+                    <p className="text-[10px] font-mono uppercase tracking-widest text-[#999] mb-0.5">{label}</p>
+                    <p className={`font-mono font-semibold text-base ${label === 'Ganancia estimada' ? (totales.ganancia >= 0 ? 'text-[#1a6b3c]' : 'text-[#c0392b]') : 'text-[#1a1a1a]'}`}>{value}</p>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs font-mono text-[#999] mt-2">Venta estimada = precio de venta × unidades de cada producto · Ganancia = venta estimada − costo total con IVA</p>
             </div>
 
             <div className="flex gap-3 flex-wrap pt-2">

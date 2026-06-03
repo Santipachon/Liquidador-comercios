@@ -88,6 +88,10 @@
     background-color: #faf9f6;
   }
 
+  .row-revisado {
+    background-color: #f0fdf4;
+  }
+
   .row-highlight {
     animation: highlightFlash 2.5s ease forwards;
   }
