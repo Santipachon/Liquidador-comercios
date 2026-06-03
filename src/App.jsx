@@ -37,6 +37,7 @@ function parsearFacturaDIAN(xmlText) {
     const precio_unitario = parseFloat(getTag(linea, 'cbc:PriceAmount') || '0') || 0
     const subtotal = parseFloat(getTag(linea, 'cbc:LineExtensionAmount') || '0') || (precio_unitario * cantidad)
     const iva = parseFloat(getTag(linea, 'cbc:TaxAmount') || '0') || 0
+    const iva_percent = extraerIvaPercent(linea)
     return {
       nombre: nombre.replace(/\t/g, ' ').trim().substring(0, 80),
       codigo: codigo.trim().substring(0, 30),
@@ -44,9 +45,24 @@ function parsearFacturaDIAN(xmlText) {
       precio_unitario: Math.round(precio_unitario),
       subtotal: Math.round(subtotal),
       iva: Math.round(iva),
+      iva_percent,
       total: Math.round(subtotal + iva),
     }
   })
+}
+
+// Extrae el % de IVA de una InvoiceLine DIAN:
+// cac:TaxTotal > cac:TaxSubtotal > cac:TaxCategory > cbc:Percent (TaxScheme IVA / ID 01)
+function extraerIvaPercent(linea) {
+  const subtotales = [...linea.matchAll(/<cac:TaxSubtotal>([\s\S]*?)<\/cac:TaxSubtotal>/gi)]
+  for (const [, sub] of subtotales) {
+    const esIva = /<cbc:Name>\s*IVA\s*<\/cbc:Name>/i.test(sub) || /<cac:TaxScheme>[\s\S]*?<cbc:ID[^>]*>\s*01\s*<\/cbc:ID>/i.test(sub)
+    const percentMatch = sub.match(/<cbc:Percent[^>]*>([\d.,]+)<\/cbc:Percent>/i)
+    if (esIva && percentMatch) return parseFloat(percentMatch[1]) || 0
+  }
+  // Fallback: primer cbc:Percent que aparezca en la línea
+  const m = linea.match(/<cbc:Percent[^>]*>([\d.,]+)<\/cbc:Percent>/i)
+  return m ? (parseFloat(m[1]) || 0) : 0
 }
 
 function getTag(xml, tag) {
@@ -140,15 +156,13 @@ function UploadZone({ onFile, loading }) {
 
 // ─── Product Row ──────────────────────────────────────────────────────────────
 function ProductRow({ product, index, onUpdate }) {
-  const { nombre, codigo, cantidad, precio_unitario, margen, tieneIva, aproximado } = product
+  const { nombre, codigo, cantidad, precio_unitario, margen, iva_percent, aproximado } = product
 
   // Base: precio unitario
   let precio = precio_unitario
   // Aplicar margen
   precio = precio * (1 + margen / 100)
-  // Aplicar IVA si aplica
-  if (tieneIva) precio = precio * 1.19
-  // Aproximar si aplica
+  // Aproximar si aplica (el IVA es solo informativo, no afecta el precio)
   if (aproximado) precio = aproximar(precio)
   else precio = Math.round(precio)
 
@@ -168,13 +182,10 @@ function ProductRow({ product, index, onUpdate }) {
           <span className="text-[#999] font-mono text-xs">%</span>
         </div>
       </td>
-      <td className="table-cell">
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input type="checkbox" checked={tieneIva}
-            onChange={(e) => onUpdate(index, 'tieneIva', e.target.checked)}
-            className="w-4 h-4 cursor-pointer accent-[#1a6b3c]" />
-          <span className="text-sm font-mono text-[#555]">19%</span>
-        </label>
+      <td className="table-cell text-center">
+        <span className={`font-mono text-sm font-semibold ${iva_percent > 0 ? 'text-[#2980b9]' : 'text-[#999]'}`}>
+          {iva_percent % 1 === 0 ? iva_percent : iva_percent.toFixed(1)}%
+        </span>
       </td>
       <td className="table-cell">
         <label className="flex items-center gap-2 cursor-pointer">
@@ -205,6 +216,7 @@ export default function App() {
   const [toast, setToast] = useState(null)
   const [fileName, setFileName] = useState(null)
   const [pdfUrl, setPdfUrl] = useState(null)
+  const [margenGlobal, setMargenGlobal] = useState('')
 
   function showToast(message, type = 'info', duration = 3500) {
     setToast({ message, type })
@@ -218,7 +230,6 @@ export default function App() {
     setProducts(data.map(p => ({
       ...p,
       margen: 30,
-      tieneIva: false,
       aproximado: false,
     })))
     showToast(`✓ ${data.length} producto(s) cargados`, 'success')
@@ -278,9 +289,11 @@ export default function App() {
     setProducts(prev => prev.map((p, i) => i === index ? { ...p, [field]: value } : p))
   }
 
-  function handleIvaAll() {
-    setProducts(prev => prev.map(p => ({ ...p, tieneIva: true })))
-    showToast('IVA 19% aplicado a todos los productos', 'success')
+  function handleMargenAll() {
+    const valor = parseFloat(margenGlobal)
+    if (isNaN(valor) || valor < 0) return
+    setProducts(prev => prev.map(p => ({ ...p, margen: valor })))
+    showToast(`Margen ${valor}% aplicado a todos los productos`, 'success')
   }
 
   function handleAproximarAll() {
@@ -295,7 +308,6 @@ export default function App() {
   function calcPrecio(p) {
     let precio = p.precio_unitario
     precio = precio * (1 + p.margen / 100)
-    if (p.tieneIva) precio = precio * 1.19
     if (p.aproximado) precio = aproximar(precio)
     else precio = Math.round(precio)
     return precio
@@ -371,10 +383,19 @@ export default function App() {
               <div className="bg-[#f0fdf4] border border-[#86efac] px-4 py-2 font-mono text-sm text-[#1a6b3c]">
                 ● Precio calculado sobre precio unitario
               </div>
-              <button onClick={handleIvaAll}
-                className="px-4 py-2 border-2 border-[#2980b9] text-[#2980b9] font-semibold text-sm font-mono hover:bg-[#2980b9] hover:text-white transition-colors">
-                + IVA 19% a todos
-              </button>
+              <div className="flex items-center border-2 border-[#2980b9]">
+                <input
+                  type="number" min="0" max="999" placeholder="%" value={margenGlobal}
+                  onChange={(e) => setMargenGlobal(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleMargenAll()}
+                  className="w-16 px-2 py-2 text-sm font-mono font-semibold text-[#2980b9] bg-transparent outline-none text-center placeholder:text-[#2980b9]/40"
+                />
+                <button onClick={handleMargenAll}
+                  disabled={margenGlobal === '' || isNaN(parseFloat(margenGlobal))}
+                  className="px-4 py-2 bg-transparent text-[#2980b9] font-semibold text-sm font-mono border-l-2 border-[#2980b9] hover:bg-[#2980b9] hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[#2980b9]">
+                  % Margen a todos
+                </button>
+              </div>
               <button onClick={handleAproximarAll}
                 className="px-4 py-2 border-2 border-[#8e44ad] text-[#8e44ad] font-semibold text-sm font-mono hover:bg-[#8e44ad] hover:text-white transition-colors">
                 ↑ Aproximar todos
@@ -390,7 +411,7 @@ export default function App() {
                     <th className="table-header">Cant.</th>
                     <th className="table-header">Precio unitario</th>
                     <th className="table-header">Margen (%)</th>
-                    <th className="table-header">IVA</th>
+                    <th className="table-header">IVA factura</th>
                     <th className="table-header">Aprox.</th>
                     <th className="table-header">Precio venta</th>
                     <th className="table-header">Código letras</th>
