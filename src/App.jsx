@@ -84,6 +84,16 @@ function matchProveedor(nit) {
   return PROVEEDORES.find(p => nitsCoinciden(p.nit, nit)) || null
 }
 
+// Extrae el número de la factura (ej: TGE121432, FEV5369)
+function extraerNumeroFactura(xmlText) {
+  const m =
+    xmlText.match(/<cbc:ParentDocumentID[^>]*>([^<]+)<\/cbc:ParentDocumentID>/i) ||
+    xmlText.match(/<Invoice[\s\S]*?<cbc:ID[^>]*>([^<]+)<\/cbc:ID>/i)
+  if (!m) return ''
+  // Solo caracteres seguros para nombre de archivo
+  return m[1].trim().replace(/[^\w-]/g, '')
+}
+
 // ─── Parser XML DIAN ──────────────────────────────────────────────────────────
 function parsearFacturaDIAN(xmlText) {
   let xmlFactura = xmlText
@@ -318,6 +328,7 @@ export default function App() {
   // ─── Sigla del proveedor (código interno del almacén) ───
   const [siglaFactura, setSiglaFactura] = useState('')
   const [proveedorXml, setProveedorXml] = useState(null) // { nit, nombre } leído del XML
+  const [numeroFactura, setNumeroFactura] = useState('')
 
   function showToast(message, type = 'info', duration = 3500) {
     setToast({ message, type })
@@ -334,6 +345,8 @@ export default function App() {
       aproximado: false,
       revisado: false,
     })))
+
+    setNumeroFactura(extraerNumeroFactura(xmlText))
 
     // Detectar proveedor por NIT y asignar la sigla del almacén automáticamente
     const prov = extraerProveedor(xmlText)
@@ -421,7 +434,7 @@ export default function App() {
     setProducts([]); setError(null); setFileName(null); setPdfUrl(null)
     setBusqueda(''); setSortCol(null); setSortDir('nat'); setHighlightIdx(null)
     setPrecioMin(''); setPrecioMax('')
-    setSiglaFactura(''); setProveedorXml(null)
+    setSiglaFactura(''); setProveedorXml(null); setNumeroFactura('')
   }
 
   function calcPrecio(p) {
@@ -534,7 +547,10 @@ export default function App() {
     ws['!cols'] = [{ wch: 45 }, { wch: 22 }, { wch: 18 }, { wch: 20 }]
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Productos')
-    const nombreArchivo = `liquidacion_${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}.xlsx`
+    const fechaArchivo = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`
+    const nombreArchivo = numeroFactura
+      ? `liquidacion_${numeroFactura}.xlsx`
+      : `liquidacion_${fechaArchivo}.xlsx`
     XLSX.writeFile(wb, nombreArchivo)
     showToast('✓ Excel descargado correctamente', 'success')
     if (!siglaFactura.trim()) {
@@ -728,6 +744,7 @@ export default function App() {
                   </p>
                 </div>
                 {[
+                  ['Factura Nº', numeroFactura || '—'],
                   ['Productos', vista.length === products.length ? products.length : `${vista.length} de ${products.length} (filtro activo)`],
                   ['Unidades', totales.unidades],
                   ['Costo sin IVA', formatCOP(totales.costoSinIva)],
