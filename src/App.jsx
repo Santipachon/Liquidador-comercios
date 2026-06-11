@@ -534,19 +534,43 @@ export default function App() {
     if (!products.length) return
     const today = new Date()
     const fecha = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`
-    const filas = products.map(p => {
+    const sigla = siglaFactura.trim().toUpperCase()
+
+    // Hoja 1 "Para imprimir": una fila por cada unidad del producto
+    const filasImpresion = []
+    for (const p of products) {
+      const precio = calcPrecio(p)
+      const veces = Math.max(1, p.cantidad)
+      for (let i = 0; i < veces; i++) {
+        filasImpresion.push({
+          'Nombre del producto': p.nombre,
+          'Código de Proveedor': sigla,
+          'Código interno': numToLetras(precio),
+          'Fecha de impresión': fecha,
+        })
+      }
+    }
+
+    // Hoja 2 "Resumen": una fila por producto, con la cantidad
+    const filasResumen = products.map(p => {
       const precio = calcPrecio(p)
       return {
         'Nombre del producto': p.nombre,
-        'Código de Proveedor': siglaFactura.trim().toUpperCase(),
+        'Cantidad': p.cantidad,
+        'Código de Proveedor': sigla,
         'Código interno': numToLetras(precio),
         'Fecha de impresión': fecha,
       }
     })
-    const ws = XLSX.utils.json_to_sheet(filas)
-    ws['!cols'] = [{ wch: 45 }, { wch: 22 }, { wch: 18 }, { wch: 20 }]
+
+    const wsImpresion = XLSX.utils.json_to_sheet(filasImpresion)
+    wsImpresion['!cols'] = [{ wch: 45 }, { wch: 22 }, { wch: 18 }, { wch: 20 }]
+    const wsResumen = XLSX.utils.json_to_sheet(filasResumen)
+    wsResumen['!cols'] = [{ wch: 45 }, { wch: 10 }, { wch: 22 }, { wch: 18 }, { wch: 20 }]
+
     const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Productos')
+    XLSX.utils.book_append_sheet(wb, wsImpresion, 'Para imprimir')
+    XLSX.utils.book_append_sheet(wb, wsResumen, 'Resumen')
     const fechaArchivo = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`
     const nombreArchivo = numeroFactura
       ? `liquidacion_${numeroFactura}.xlsx`
