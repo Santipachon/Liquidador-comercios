@@ -301,7 +301,7 @@ function ProductRow({ product, index, origIndex, onUpdate, rowRef, highlighted }
           <input type="number" min="0" max="9999" value={etiquetas}
             onChange={(e) => onUpdate(origIndex, 'etiquetas', Math.max(0, parseInt(e.target.value) || 0))}
             title="Cuántas etiquetas imprimir de este producto (filas repetidas en el Excel)"
-            className="w-16 text-center border-2 border-[#8e44ad] bg-white font-mono text-base py-1 px-2 focus:outline-none focus:border-[#6c3483] transition-colors" />
+            className="w-14 text-center border-2 border-[#8e44ad] bg-white font-mono text-sm py-1 px-1.5 focus:outline-none focus:border-[#6c3483] transition-colors" />
           {etiquetas !== cantidad && (
             <button onClick={() => onUpdate(origIndex, 'etiquetas', cantidad)}
               title={`Volver a la cantidad de la factura (${cantidad})`}
@@ -796,7 +796,7 @@ export default function Liquidador({ onGuardar }) {
             )}
 
             <div className="border-2 border-[#1a1a1a] bg-white overflow-x-auto">
-              <table className="w-full border-collapse min-w-[1200px]">
+              <table className="w-full border-collapse min-w-[860px]">
                 <thead>
                   <tr>
                     {[

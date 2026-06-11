@@ -39,17 +39,17 @@
   }
 
   .table-header {
-    @apply bg-[#1a1a1a] text-white font-semibold text-sm tracking-widest
-    uppercase px-4 py-3 text-left font-mono;
+    @apply bg-[#1a1a1a] text-white font-semibold text-xs tracking-wider
+    uppercase px-2.5 py-2.5 text-left font-mono;
   }
 
   .table-cell {
-    @apply px-4 py-4 text-base border-b border-[#e0ddd5] text-[#1a1a1a];
+    @apply px-2.5 py-2.5 text-sm border-b border-[#e0ddd5] text-[#1a1a1a];
   }
 
   .margin-input {
-    @apply w-20 text-center border-2 border-[#1a1a1a] bg-white font-mono
-    text-base py-1 px-2 focus:outline-none focus:border-[#2980b9]
+    @apply w-14 text-center border-2 border-[#1a1a1a] bg-white font-mono
+    text-sm py-1 px-1.5 focus:outline-none focus:border-[#2980b9]
     transition-colors duration-200;
   }
 
