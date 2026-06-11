@@ -112,7 +112,10 @@ function upsertProducto(it, sigla, fecha) {
   prod.codigo_interno = it.codigo_interno
   prod.ultima_fecha = fecha
   prod.veces += 1
-  prod.hist.push({ fecha, costo: it.precio_unitario, venta: it.precio_venta })
+  prod.hist.push({
+    fecha, costo: it.precio_unitario, venta: it.precio_venta,
+    cantidad: it.cantidad, margen: it.margen, redondeo: it.redondeo,
+  })
   if (prod.hist.length > 24) prod.hist = prod.hist.slice(-24)
 }
 
