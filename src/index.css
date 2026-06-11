@@ -92,6 +92,11 @@
     background-color: #f0fdf4;
   }
 
+  .row-revisar {
+    background-color: #fdecea;
+    box-shadow: inset 4px 0 0 #c0392b;
+  }
+
   .row-highlight {
     animation: highlightFlash 2.5s ease forwards;
   }

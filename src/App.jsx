@@ -247,7 +247,7 @@ function UploadZone({ onFile, loading }) {
 
 // ─── Product Row ──────────────────────────────────────────────────────────────
 function ProductRow({ product, index, origIndex, onUpdate, rowRef, highlighted }) {
-  const { nombre, codigo, cantidad, precio_unitario, margen, iva_percent, aproximado, revisado } = product
+  const { nombre, codigo, cantidad, precio_unitario, margen, iva_percent, aproximado, revisado, etiquetas } = product
 
   // Base: precio unitario
   let precio = precio_unitario
@@ -259,8 +259,12 @@ function ProductRow({ product, index, origIndex, onUpdate, rowRef, highlighted }
 
   const codigoLetras = numToLetras(precio)
 
+  // Posible revisión: más de 50 unidades, o es tornillería/tuercas (no requieren etiqueta por unidad)
+  const requiereRevision = cantidad > 50 || /tornill|tuerc/.test(normalizar(nombre))
+  const baseRow = revisado ? 'row-revisado' : requiereRevision ? 'row-revisar' : index % 2 === 0 ? 'row-even' : 'row-odd'
+
   return (
-    <tr ref={rowRef} className={`${highlighted ? 'row-highlight ' : ''}${revisado ? 'row-revisado' : index % 2 === 0 ? 'row-even' : 'row-odd'}`}>
+    <tr ref={rowRef} className={`${highlighted ? 'row-highlight ' : ''}${baseRow}`}>
       <td className="table-cell text-center">
         <button onClick={() => onUpdate(origIndex, 'revisado', !revisado)}
           title={revisado ? 'Desmarcar revisado' : 'Marcar como revisado'}
@@ -268,9 +272,28 @@ function ProductRow({ product, index, origIndex, onUpdate, rowRef, highlighted }
           ✓
         </button>
       </td>
-      <td className="table-cell font-semibold text-sm">{nombre}</td>
-      <td className="table-cell font-mono text-[#555] text-sm">{codigo}</td>
+      <td className="table-cell font-semibold text-sm">
+        <span className="flex items-center gap-2">
+          {requiereRevision && !revisado && (
+            <span title="Posible revisión: más de 50 unidades o tornillería/tuercas" className="text-[#c0392b] font-bold">⚠</span>
+          )}
+          {nombre}
+        </span>
+      </td>
       <td className="table-cell text-center font-mono font-semibold">{cantidad}</td>
+      <td className="table-cell">
+        <div className="flex items-center gap-1">
+          <input type="number" min="0" max="9999" value={etiquetas}
+            onChange={(e) => onUpdate(origIndex, 'etiquetas', Math.max(0, parseInt(e.target.value) || 0))}
+            title="Cuántas etiquetas imprimir de este producto (filas repetidas en el Excel)"
+            className="w-16 text-center border-2 border-[#8e44ad] bg-white font-mono text-base py-1 px-2 focus:outline-none focus:border-[#6c3483] transition-colors" />
+          {etiquetas !== cantidad && (
+            <button onClick={() => onUpdate(origIndex, 'etiquetas', cantidad)}
+              title={`Volver a la cantidad de la factura (${cantidad})`}
+              className="text-[10px] font-mono text-[#8e44ad] hover:underline whitespace-nowrap">= {cantidad}</button>
+          )}
+        </div>
+      </td>
       <td className="table-cell font-mono text-sm">{formatCOP(precio_unitario)}</td>
       <td className="table-cell">
         <div className="flex items-center gap-1">
@@ -344,6 +367,7 @@ export default function App() {
       margen: 30,
       aproximado: false,
       revisado: false,
+      etiquetas: p.cantidad, // por defecto, una etiqueta por unidad
     })))
 
     setNumeroFactura(extraerNumeroFactura(xmlText))
@@ -430,6 +454,12 @@ export default function App() {
     showToast('Aproximación a 1.000 activada para todos', 'success')
   }
 
+  function handleEtiquetasAll(valor) {
+    // valor numérico fijo, o 'cantidad' para volver al default
+    setProducts(prev => prev.map(p => ({ ...p, etiquetas: valor === 'cantidad' ? p.cantidad : valor })))
+    showToast(valor === 'cantidad' ? 'Etiquetas = cantidad en todos' : `${valor} etiqueta(s) por producto en todos`, 'success')
+  }
+
   function handleClear() {
     setProducts([]); setError(null); setFileName(null); setPdfUrl(null)
     setBusqueda(''); setSortCol(null); setSortDir('nat'); setHighlightIdx(null)
@@ -488,6 +518,7 @@ export default function App() {
     nombre: (a, b) => a.p.nombre.localeCompare(b.p.nombre, 'es'),
     codigo: (a, b) => a.p.codigo.localeCompare(b.p.codigo, 'es'),
     cantidad: (a, b) => b.p.cantidad - a.p.cantidad,
+    etiquetas: (a, b) => b.p.etiquetas - a.p.etiquetas,
     precio_unitario: (a, b) => b.p.precio_unitario - a.p.precio_unitario,
     margen: (a, b) => b.p.margen - a.p.margen,
     iva: (a, b) => b.p.iva_percent - a.p.iva_percent,
@@ -518,15 +549,16 @@ export default function App() {
 
   // ─── Totales (siempre sobre la factura completa) ───
   const totales = (() => {
-    let unidades = 0, costoSinIva = 0, ivaTotal = 0, ventaEstimada = 0
+    let unidades = 0, costoSinIva = 0, ivaTotal = 0, ventaEstimada = 0, etiquetas = 0
     for (const p of products) {
       unidades += p.cantidad
       costoSinIva += p.subtotal
       ivaTotal += p.iva
       ventaEstimada += calcPrecio(p) * p.cantidad
+      etiquetas += Math.max(0, p.etiquetas || 0)
     }
     const costoConIva = costoSinIva + ivaTotal
-    return { unidades, costoSinIva, ivaTotal, costoConIva, ventaEstimada, ganancia: ventaEstimada - costoConIva }
+    return { unidades, etiquetas, costoSinIva, ivaTotal, costoConIva, ventaEstimada, ganancia: ventaEstimada - costoConIva }
   })()
   const revisadosCount = products.filter(p => p.revisado).length
 
@@ -536,11 +568,11 @@ export default function App() {
     const fecha = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`
     const sigla = siglaFactura.trim().toUpperCase()
 
-    // Hoja 1 "Para imprimir": una fila por cada unidad del producto
+    // Hoja 1 "Para imprimir": una fila por cada etiqueta a imprimir del producto
     const filasImpresion = []
     for (const p of products) {
       const precio = calcPrecio(p)
-      const veces = Math.max(1, p.cantidad)
+      const veces = Math.max(0, p.etiquetas)
       for (let i = 0; i < veces; i++) {
         filasImpresion.push({
           'Nombre del producto': p.nombre,
@@ -551,12 +583,13 @@ export default function App() {
       }
     }
 
-    // Hoja 2 "Resumen": una fila por producto, con la cantidad
+    // Hoja 2 "Resumen": una fila por producto, con cantidad y etiquetas
     const filasResumen = products.map(p => {
       const precio = calcPrecio(p)
       return {
         'Nombre del producto': p.nombre,
         'Cantidad': p.cantidad,
+        'Etiquetas': p.etiquetas,
         'Código de Proveedor': sigla,
         'Código interno': numToLetras(precio),
         'Fecha de impresión': fecha,
@@ -566,7 +599,7 @@ export default function App() {
     const wsImpresion = XLSX.utils.json_to_sheet(filasImpresion)
     wsImpresion['!cols'] = [{ wch: 45 }, { wch: 22 }, { wch: 18 }, { wch: 20 }]
     const wsResumen = XLSX.utils.json_to_sheet(filasResumen)
-    wsResumen['!cols'] = [{ wch: 45 }, { wch: 10 }, { wch: 22 }, { wch: 18 }, { wch: 20 }]
+    wsResumen['!cols'] = [{ wch: 45 }, { wch: 10 }, { wch: 10 }, { wch: 22 }, { wch: 18 }, { wch: 20 }]
 
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, wsImpresion, 'Para imprimir')
@@ -649,6 +682,20 @@ export default function App() {
                 className="px-4 py-2 border-2 border-[#8e44ad] text-[#8e44ad] font-semibold text-sm font-mono hover:bg-[#8e44ad] hover:text-white transition-colors">
                 ↑ Aproximar todos
               </button>
+              {/* Etiquetas a todos */}
+              <div className="flex items-center border-2 border-[#8e44ad] font-mono text-sm">
+                <span className="pl-3 pr-2 text-[#8e44ad] font-semibold">🏷 Etiquetas:</span>
+                <button onClick={() => handleEtiquetasAll(1)}
+                  title="1 etiqueta por producto (para tornillos, tuercas, etc.)"
+                  className="px-3 py-2 text-[#8e44ad] font-semibold border-l-2 border-[#8e44ad] hover:bg-[#8e44ad] hover:text-white transition-colors">
+                  todas a 1
+                </button>
+                <button onClick={() => handleEtiquetasAll('cantidad')}
+                  title="Volver al default: una etiqueta por unidad (= cantidad de la factura)"
+                  className="px-3 py-2 text-[#8e44ad] font-semibold border-l-2 border-[#8e44ad] hover:bg-[#8e44ad] hover:text-white transition-colors">
+                  = cantidad
+                </button>
+              </div>
 
               {/* ─── Filtro (alineado a la derecha) ─── */}
               <div className="ml-auto flex items-center gap-2 flex-wrap">
@@ -705,15 +752,22 @@ export default function App() {
               </div>
             </div>
 
+            {products.some(p => !p.revisado && (p.cantidad > 50 || /tornill|tuerc/.test(normalizar(p.nombre)))) && (
+              <div className="flex items-center gap-2 text-xs font-mono text-[#7f1d1d] bg-[#fdecea] border-l-4 border-[#c0392b] px-3 py-2">
+                <span className="font-bold whitespace-nowrap">⚠ Filas en rojo</span>
+                <span className="text-[#a13a30]">= posible revisión de etiquetas (más de 50 unidades, o tornillos/tuercas). Ajuste las etiquetas y marque ✓ al revisar.</span>
+              </div>
+            )}
+
             <div className="border-2 border-[#1a1a1a] bg-white overflow-x-auto">
-              <table className="w-full border-collapse min-w-[1100px]">
+              <table className="w-full border-collapse min-w-[1200px]">
                 <thead>
                   <tr>
                     {[
                       ['revisado', '✓'],
                       ['nombre', 'Producto'],
-                      ['codigo', 'Código'],
                       ['cantidad', 'Cant.'],
+                      ['etiquetas', 'Etiquetas'],
                       ['precio_unitario', 'Precio unitario'],
                       ['margen', 'Margen (%)'],
                       ['iva', 'IVA factura'],
@@ -771,6 +825,7 @@ export default function App() {
                   ['Factura Nº', numeroFactura || '—'],
                   ['Productos', vista.length === products.length ? products.length : `${vista.length} de ${products.length} (filtro activo)`],
                   ['Unidades', totales.unidades],
+                  ['Etiquetas a imprimir', totales.etiquetas],
                   ['Costo sin IVA', formatCOP(totales.costoSinIva)],
                   ['IVA factura', formatCOP(totales.ivaTotal)],
                   ['Costo total (c/IVA)', formatCOP(totales.costoConIva)],
