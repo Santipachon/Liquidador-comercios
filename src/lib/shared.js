@@ -9,6 +9,13 @@ export const numToLetras = n =>
 export const normalizar = s =>
   String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
 
+// Búsqueda amigable por palabras sueltas: "cuña 8" encuentra cualquier texto que
+// contenga TODAS las palabras (en cualquier orden). Ignora tildes y mayúsculas.
+export const coincide = (texto, query) => {
+  const t = normalizar(texto)
+  return normalizar(query).split(/\s+/).filter(Boolean).every(tok => t.includes(tok))
+}
+
 export const formatCOP = n =>
   new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(n || 0)
 

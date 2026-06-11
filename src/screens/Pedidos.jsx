@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getPendientes, updatePendiente, addPedido, getPedidos, getConfig, setConfig, getCatalogo, getProductoPorNombre } from '../lib/db'
 import { generarComprobantePDF } from '../lib/pdf'
-import { PROVEEDORES, provNombre, formatCOP, fechaCorta, normalizar } from '../lib/shared'
+import { PROVEEDORES, provNombre, formatCOP, fechaCorta, coincide } from '../lib/shared'
 
 const hoyISO = () => new Date().toISOString()
 const venceEn = dias => new Date(Date.now() + dias * 86400000).toISOString()
@@ -38,9 +38,8 @@ export default function Pedidos() {
   }
 
   // Buscador del catálogo para añadir productos (rellena código y costo solos)
-  const tCat = normalizar(buscarCat.trim())
-  const matchesCat = tCat
-    ? catalogo.filter(p => normalizar(p.nombre).includes(tCat) && (!sigla || p.sigla === sigla || p.sigla === '?')).slice(0, 7)
+  const matchesCat = buscarCat.trim()
+    ? catalogo.filter(p => coincide(`${p.nombre} ${p.codigo || ''}`, buscarCat) && (!sigla || p.sigla === sigla || p.sigla === '?')).slice(0, 7)
     : []
   function agregarDelCatalogo(p) {
     setItems([...items, { codigo: p.codigo || '', nombre: p.nombre, cantidad: 1, precio: p.ultimo_costo || 0 }])
@@ -144,7 +143,7 @@ export default function Pedidos() {
               <div className="relative" style={{ minWidth: 320, flex: 1 }}>
                 <input className="input-plat" placeholder="🔍 Agregar producto del catálogo (código y costo automáticos)…"
                   value={buscarCat} onChange={e => setBuscarCat(e.target.value)} autoComplete="off" />
-                {tCat && (
+                {buscarCat.trim() && (
                   <div className="absolute left-0 right-0 top-full mt-1 bg-white border-2 border-[#1a1a1a] z-20 max-h-64 overflow-y-auto shadow-xl">
                     {matchesCat.length === 0 ? <p className="px-3 py-2 text-sm text-[#999] font-mono">Sin coincidencias en el catálogo</p> :
                       matchesCat.map((p, i) => (

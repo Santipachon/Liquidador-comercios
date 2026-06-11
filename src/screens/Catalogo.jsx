@@ -1,14 +1,13 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getCatalogo } from '../lib/db'
-import { normalizar, formatCOP, provNombre } from '../lib/shared'
+import { coincide, formatCOP, provNombre } from '../lib/shared'
 
 export default function Catalogo() {
   const nav = useNavigate()
   const [q, setQ] = useState('')
   const catalogo = getCatalogo()
-  const t = normalizar(q.trim())
-  const list = t ? catalogo.filter(p => normalizar(p.nombre).includes(t) || normalizar(p.sigla).includes(t)) : catalogo
+  const list = q.trim() ? catalogo.filter(p => coincide(`${p.nombre} ${p.codigo || ''} ${p.sigla}`, q)) : catalogo
 
   return (
     <div className="space-y-5">
