@@ -26,12 +26,12 @@ export default function Pendientes() {
   const t = normalizar(q.trim())
   const matches = t ? catalogo.filter(p => normalizar(p.nombre).includes(t)).slice(0, 7) : []
 
-  function elegir(p) { setSel({ nombre: p.nombre, sigla: p.sigla }); setQ(p.nombre) }
-  function elegirLibre() { setSel({ nombre: q.trim(), sigla: '', libre: true }); }
+  function elegir(p) { setSel({ nombre: p.nombre, sigla: p.sigla, codigo: p.codigo || '' }); setQ(p.nombre) }
+  function elegirLibre() { setSel({ nombre: q.trim(), sigla: '', codigo: '', libre: true }); }
 
   function agregar() {
     if (!sel) return
-    addPendiente({ prod: sel.nombre, cant: parseInt(cant) || 1, cliente: cliente.trim(), tel: tel.trim(), sigla: sel.sigla || '—' })
+    addPendiente({ prod: sel.nombre, codigo: sel.codigo || '', cant: parseInt(cant) || 1, cliente: cliente.trim(), tel: tel.trim(), sigla: sel.sigla || '—' })
     setSel(null); setQ(''); setCant(1); setCliente(''); setTel('')
     refresh()
   }

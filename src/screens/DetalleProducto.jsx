@@ -45,8 +45,9 @@ export default function DetalleProducto() {
       <div className="pcard">
         <h2 className="text-xl font-bold">{prod.nombre}</h2>
         <p className="text-sm text-[#666] font-mono mt-1">
-          Proveedor: {provNombre(prod.sigla)} ({prod.sigla}) · Código interno:{' '}
-          <span className="font-bold">{prod.codigo_interno}</span> · {prod.veces} compras
+          Proveedor: {provNombre(prod.sigla)} ({prod.sigla})
+          {prod.codigo && <> · Código proveedor: <span className="font-bold">{prod.codigo}</span></>}
+          {' '}· Código interno: <span className="font-bold">{prod.codigo_interno}</span> · {prod.veces} compras
         </p>
       </div>
 

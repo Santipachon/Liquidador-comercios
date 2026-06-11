@@ -93,6 +93,14 @@ export function guardarLiquidacion(p) {
 export function getCatalogo() {
   return [...cache.catalogo].sort((a, b) => norm(a.nombre).localeCompare(norm(b.nombre)))
 }
+// Busca un producto del catálogo por nombre (y opcionalmente sigla) para auto-rellenar
+// su código, costo, etc. Primero intenta coincidencia exacta por clave (sigla+nombre),
+// luego por nombre normalizado en cualquier proveedor.
+export function getProductoPorNombre(nombre, sigla) {
+  const n = norm(nombre)
+  return cache.catalogo.find(p => p.key === keyProd(nombre, sigla))
+    || cache.catalogo.find(p => norm(p.nombre) === n) || null
+}
 function keyProd(nombre, sigla) { return (sigla || '?') + '|' + norm(nombre).slice(0, 60) }
 function upsertProducto(it, sigla, fecha) {
   const k = keyProd(it.nombre, sigla)

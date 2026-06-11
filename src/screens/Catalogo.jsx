@@ -26,13 +26,14 @@ export default function Catalogo() {
           <div className="overflow-x-auto mt-3">
             <table className="w-full border-collapse text-sm">
               <thead><tr>
-                {['Producto', 'Prov.', 'Últ. costo', 'Precio venta', 'Cód. interno', 'Compras', ''].map(h =>
+                {['Producto', 'Cód. prov.', 'Prov.', 'Últ. costo', 'Precio venta', 'Cód. interno', 'Compras', ''].map(h =>
                   <th key={h} className="bg-[#1a1a1a] text-white text-left px-3 py-2 text-xs font-mono uppercase tracking-wider">{h}</th>)}
               </tr></thead>
               <tbody>
                 {list.map(p => (
                   <tr key={p.key} className="border-b border-[#e0ddd5] hover:bg-[#faf9f6] cursor-pointer" onClick={() => nav('/catalogo/' + encodeURIComponent(p.key))}>
                     <td className="px-3 py-2.5 font-semibold">{p.nombre}</td>
+                    <td className="px-3 py-2.5 font-mono text-[#555]">{p.codigo || <span className="text-[#bbb]">—</span>}</td>
                     <td className="px-3 py-2.5 font-mono" title={provNombre(p.sigla)}>{p.sigla}</td>
                     <td className="px-3 py-2.5 font-mono">{formatCOP(p.ultimo_costo)}</td>
                     <td className="px-3 py-2.5 font-mono text-[#1a6b3c] font-semibold">{formatCOP(p.ultimo_venta)}</td>

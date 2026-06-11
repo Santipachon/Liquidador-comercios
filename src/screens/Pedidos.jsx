@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getPendientes, updatePendiente, addPedido, getPedidos, getConfig, setConfig } from '../lib/db'
+import { getPendientes, updatePendiente, addPedido, getPedidos, getConfig, setConfig, getCatalogo, getProductoPorNombre } from '../lib/db'
 import { generarComprobantePDF } from '../lib/pdf'
-import { PROVEEDORES, provNombre, formatCOP, fechaCorta } from '../lib/shared'
+import { PROVEEDORES, provNombre, formatCOP, fechaCorta, normalizar } from '../lib/shared'
 
 const hoyISO = () => new Date().toISOString()
 const venceEn = dias => new Date(Date.now() + dias * 86400000).toISOString()
@@ -21,13 +21,30 @@ export default function Pedidos() {
   const [obs, setObs] = useState('')
   const [editandoDatos, setEditandoDatos] = useState(false)
   const [cfg, setCfg] = useState(getConfig())
+  const [buscarCat, setBuscarCat] = useState('')
 
   const pedidos = getPedidos()
+  const catalogo = getCatalogo()
 
   function elegirProveedor(s) {
     setSigla(s)
+    setBuscarCat('')
     const pend = getPendientes().filter(p => p.sigla === s && p.estado === 'pendiente')
-    setItems(pend.map(p => ({ codigo: '', nombre: p.prod, cantidad: p.cant || 1, precio: 0, pendienteId: p.id })))
+    setItems(pend.map(p => {
+      // Auto-rellenar código y costo desde el catálogo (info que vino en la factura)
+      const cat = getProductoPorNombre(p.prod, s)
+      return { codigo: p.codigo || cat?.codigo || '', nombre: p.prod, cantidad: p.cant || 1, precio: cat?.ultimo_costo || 0, pendienteId: p.id }
+    }))
+  }
+
+  // Buscador del catálogo para añadir productos (rellena código y costo solos)
+  const tCat = normalizar(buscarCat.trim())
+  const matchesCat = tCat
+    ? catalogo.filter(p => normalizar(p.nombre).includes(tCat) && (!sigla || p.sigla === sigla || p.sigla === '?')).slice(0, 7)
+    : []
+  function agregarDelCatalogo(p) {
+    setItems([...items, { codigo: p.codigo || '', nombre: p.nombre, cantidad: 1, precio: p.ultimo_costo || 0 }])
+    setBuscarCat('')
   }
   const setItem = (i, campo, val) => setItems(items.map((it, j) => j === i ? { ...it, [campo]: val } : it))
   const addFila = () => setItems([...items, { codigo: '', nombre: '', cantidad: 1, precio: 0 }])
@@ -123,7 +140,24 @@ export default function Pedidos() {
                 </tbody>
               </table>
             </div>
-            <button className="text-[#2980b9] font-mono text-sm hover:underline" onClick={addFila}>+ Agregar fila manual</button>
+            <div className="flex gap-4 flex-wrap items-start">
+              <div className="relative" style={{ minWidth: 320, flex: 1 }}>
+                <input className="input-plat" placeholder="🔍 Agregar producto del catálogo (código y costo automáticos)…"
+                  value={buscarCat} onChange={e => setBuscarCat(e.target.value)} autoComplete="off" />
+                {tCat && (
+                  <div className="absolute left-0 right-0 top-full mt-1 bg-white border-2 border-[#1a1a1a] z-20 max-h-64 overflow-y-auto shadow-xl">
+                    {matchesCat.length === 0 ? <p className="px-3 py-2 text-sm text-[#999] font-mono">Sin coincidencias en el catálogo</p> :
+                      matchesCat.map((p, i) => (
+                        <button key={i} onClick={() => agregarDelCatalogo(p)} className="block w-full text-left px-3 py-2 border-b border-[#eee] hover:bg-[#fffbe6]">
+                          <span className="block font-semibold text-sm">{p.nombre}</span>
+                          <span className="block text-xs text-[#999] font-mono">{p.codigo || 'sin código'} · {p.sigla} · costo {formatCOP(p.ultimo_costo)}</span>
+                        </button>
+                      ))}
+                  </div>
+                )}
+              </div>
+              <button className="text-[#2980b9] font-mono text-sm hover:underline pt-2" onClick={addFila}>+ Fila manual (vacía)</button>
+            </div>
 
             <div className="flex flex-wrap gap-6 items-end border-t border-[#e0ddd5] pt-4">
               <div className="font-mono text-sm"><span className="text-[#999]">Total unidades:</span> <b>{totalUnidades}</b>
