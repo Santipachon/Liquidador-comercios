@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from 'react'
 import * as XLSX from 'xlsx'
 import JSZip from 'jszip'
+import { getBandeja, addABandeja, quitarDeBandeja } from '../lib/db'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 const LETRA_MAP = {
@@ -369,6 +370,10 @@ export default function Liquidador({ onGuardar }) {
   const [siglaFactura, setSiglaFactura] = useState('')
   const [proveedorXml, setProveedorXml] = useState(null) // { nit, nombre } leído del XML
   const [numeroFactura, setNumeroFactura] = useState('')
+  // ─── Bandeja de facturas por liquidar ───
+  const [, setBandejaTick] = useState(0)
+  const refrescarBandeja = () => setBandejaTick(n => n + 1)
+  const bandejaInputRef = useRef(null)
 
   function showToast(message, type = 'info', duration = 3500) {
     setToast({ message, type })
@@ -453,6 +458,62 @@ export default function Liquidador({ onGuardar }) {
     } finally {
       setLoading(false)
     }
+  }
+
+  // ─── Bandeja: leer XML de un archivo (.xml o .zip) ───
+  async function leerXmlDeArchivo(file) {
+    const lower = file.name.toLowerCase()
+    if (lower.endsWith('.zip')) {
+      const zip = await JSZip.loadAsync(file)
+      for (const [name, entry] of Object.entries(zip.files)) {
+        if (!entry.dir && name.toLowerCase().endsWith('.xml')) return await entry.async('string')
+      }
+      throw new Error('El ZIP no contiene un XML')
+    }
+    if (lower.endsWith('.xml')) return await file.text()
+    throw new Error('Solo .xml o .zip')
+  }
+
+  // Agrega una o varias facturas a la bandeja "por liquidar" (renombradas: prov_num_nit_fecha)
+  async function agregarABandejaArchivos(fileList) {
+    const files = Array.from(fileList || [])
+    if (!files.length) return
+    let ok = 0, fail = 0
+    for (const file of files) {
+      try {
+        const xmlText = await leerXmlDeArchivo(file)
+        const data = parsearFacturaDIAN(xmlText)
+        if (!data || !data.length) { fail++; continue }
+        const prov = extraerProveedor(xmlText)
+        const conocido = matchProveedor(prov.nit)
+        const sigla = conocido ? conocido.sigla : ''
+        const numero = extraerNumeroFactura(xmlText)
+        const hoy = new Date()
+        const fcorta = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`
+        const nitDigits = (prov.nit || '').replace(/\D/g, '')
+        const etiqueta = `${sigla || (prov.nombre || 'PROV').slice(0, 12).replace(/\s+/g, '')}_${numero || 'sinNum'}_${nitDigits || 'sinNit'}_${fcorta}`
+        addABandeja({
+          sigla, proveedorNombre: prov.nombre || '', nit: prov.nit || '', numero,
+          fechaLlegada: hoy.toISOString(), nombreArchivo: etiqueta, nProductos: data.length, xmlText,
+        })
+        ok++
+      } catch { fail++ }
+    }
+    refrescarBandeja()
+    showToast(`${ok} factura(s) en la bandeja${fail ? ` · ${fail} no válida(s)` : ''}`, ok ? 'success' : 'error', 5000)
+  }
+
+  // Carga una factura de la bandeja en el liquidador (reusa el mismo parseo)
+  async function liquidarDeBandeja(item) {
+    setError(null); setPdfUrl(null); setLoading(true)
+    try {
+      await processXml(item.xmlText)
+      setFileName(item.nombreArchivo)
+      quitarDeBandeja(item.id); refrescarBandeja()
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    } catch (e) {
+      showToast(e.message || 'No se pudo liquidar esta factura', 'error', 6000)
+    } finally { setLoading(false) }
   }
 
   function handleUpdate(index, field, value) {
@@ -658,10 +719,48 @@ export default function Liquidador({ onGuardar }) {
   }
 
   const hasProducts = products.length > 0
+  const bandeja = getBandeja()
 
   return (
     <div>
       <main className="max-w-7xl mx-auto px-4 py-8 space-y-8">
+
+        {/* ─── Bandeja de facturas por liquidar ─── */}
+        <div className="border-2 border-[#2980b9] bg-white">
+          <div className="bg-[#2980b9] text-white px-4 py-2 flex items-center justify-between flex-wrap gap-2">
+            <span className="font-mono text-sm font-semibold">📥 Facturas por liquidar ({bandeja.length})</span>
+            <button onClick={() => bandejaInputRef.current?.click()}
+              className="text-xs font-mono bg-white text-[#2980b9] px-3 py-1 font-semibold hover:bg-[#eef6fb]">➕ Agregar facturas</button>
+            <input ref={bandejaInputRef} type="file" accept=".xml,.zip" multiple className="hidden"
+              onChange={(e) => { agregarABandejaArchivos(e.target.files); e.target.value = '' }} />
+          </div>
+          <div className="p-3">
+            {bandeja.length === 0 ? (
+              <p className="text-sm text-[#666] font-mono">No hay facturas en espera. Agregue varias a la vez con “➕ Agregar facturas”.{' '}
+                <span className="text-[#999]">(Próximamente llegan solas desde el correo.)</span></p>
+            ) : (
+              <div className="space-y-2">
+                {bandeja.map(item => {
+                  const f = item.fechaLlegada ? item.fechaLlegada.slice(0, 10) : '—'
+                  return (
+                    <div key={item.id} className="flex items-center justify-between gap-3 border border-[#e0ddd5] bg-[#faf9f6] px-3 py-2 flex-wrap">
+                      <div>
+                        <div className="font-semibold text-sm">{item.sigla ? item.sigla + ' · ' : ''}{item.proveedorNombre || 'Proveedor desconocido'}</div>
+                        <div className="text-xs text-[#999] font-mono">Fact {item.numero || '—'} · NIT {item.nit || '—'} · {item.nProductos} prod · llegó {f}</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => liquidarDeBandeja(item)}
+                          className="font-mono text-sm font-semibold px-4 py-1.5 border-2 border-[#1a6b3c] text-[#1a6b3c] hover:bg-[#1a6b3c] hover:text-white transition-colors">Liquidar →</button>
+                        <button onClick={() => { if (confirm('¿Descartar esta factura de la bandeja?')) { quitarDeBandeja(item.id); refrescarBandeja() } }}
+                          title="Descartar" className="text-[#c0392b] font-bold px-2">✕</button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
 
         <UploadZone onFile={handleFile} loading={loading} />
 

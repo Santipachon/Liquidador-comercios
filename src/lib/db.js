@@ -23,10 +23,25 @@ let cache = (() => {
   d.pendientes = d.pendientes || []
   d.pedidos = d.pedidos || []
   d.pedidoSeq = d.pedidoSeq || 0
+  d.bandeja = d.bandeja || []
   d.config = { ...CONFIG_DEFAULT, ...(d.config || {}) }
   return d
 })()
 function persist() { write(cache) }
+
+// ─── Bandeja: facturas por liquidar (hoy: carga manual; mañana: Gmail las inyecta) ───
+export function getBandeja() {
+  return [...cache.bandeja].sort((a, b) => (b.fechaLlegada || '').localeCompare(a.fechaLlegada || ''))
+}
+export function addABandeja(item) {
+  // Evita duplicar la misma factura (por número, si lo trae)
+  if (item.numero) cache.bandeja = cache.bandeja.filter(x => x.numero !== item.numero)
+  cache.bandeja.unshift({ id: 'b' + Date.now() + Math.floor(Math.random() * 1000), ...item })
+  persist()
+}
+export function quitarDeBandeja(id) {
+  cache.bandeja = cache.bandeja.filter(x => x.id !== id); persist()
+}
 
 // ─── Configuración del almacén (encabezado de comprobantes) ───
 export function getConfig() { return { ...cache.config } }
