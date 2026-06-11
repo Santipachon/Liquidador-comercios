@@ -166,9 +166,29 @@ function formatCOP(n) {
   return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n)
 }
 
-function aproximar(n) {
-  // Aproxima al siguiente múltiplo de 1.000 (ej: 13.250 → 14.000)
-  return Math.ceil(n / 1000) * 1000
+// ─── Redondeo del precio de venta (siempre hacia arriba) ───
+// Opciones del menú: 'auto' (paso según precio), 'exacto', o un paso fijo 50/100/500/1000
+const OPCIONES_REDONDEO = [
+  ['auto', '⚡ Auto'],
+  ['exacto', 'Exacto'],
+  ['50', '50'],
+  ['100', '100'],
+  ['500', '500'],
+  ['1000', '1.000'],
+]
+
+// Modo Auto: elige el paso según la magnitud del precio
+function pasoAuto(n) {
+  if (n < 10000) return 100      // tornillos, tuercas, cosas baratas
+  if (n < 50000) return 500      // rango medio
+  return 1000                    // productos caros: el salto grande no molesta
+}
+
+function redondear(n, modo) {
+  if (modo === 'exacto') return Math.round(n)
+  const paso = modo === 'auto' ? pasoAuto(n) : parseInt(modo)
+  if (!paso || paso <= 0) return Math.round(n)
+  return Math.ceil(n / paso) * paso // siempre hacia arriba
 }
 
 // Normaliza texto para búsqueda: minúsculas y sin tildes
@@ -247,15 +267,10 @@ function UploadZone({ onFile, loading }) {
 
 // ─── Product Row ──────────────────────────────────────────────────────────────
 function ProductRow({ product, index, origIndex, onUpdate, rowRef, highlighted }) {
-  const { nombre, codigo, cantidad, precio_unitario, margen, iva_percent, aproximado, revisado, etiquetas } = product
+  const { nombre, codigo, cantidad, precio_unitario, margen, iva_percent, redondeo, revisado, etiquetas } = product
 
-  // Base: precio unitario
-  let precio = precio_unitario
-  // Aplicar margen
-  precio = precio * (1 + margen / 100)
-  // Aproximar si aplica (el IVA es solo informativo, no afecta el precio)
-  if (aproximado) precio = aproximar(precio)
-  else precio = Math.round(precio)
+  // Base: precio unitario × margen, luego redondeo (el IVA es solo informativo)
+  const precio = redondear(precio_unitario * (1 + margen / 100), redondeo)
 
   const codigoLetras = numToLetras(precio)
 
@@ -309,12 +324,14 @@ function ProductRow({ product, index, origIndex, onUpdate, rowRef, highlighted }
         </span>
       </td>
       <td className="table-cell">
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input type="checkbox" checked={aproximado}
-            onChange={(e) => onUpdate(origIndex, 'aproximado', e.target.checked)}
-            className="w-4 h-4 cursor-pointer accent-[#1a6b3c]" />
-          <span className="text-xs font-mono text-[#555]">↑1000</span>
-        </label>
+        <select value={redondeo}
+          onChange={(e) => onUpdate(origIndex, 'redondeo', e.target.value)}
+          title="Cómo redondear el precio de venta (siempre hacia arriba)"
+          className="border-2 border-[#8e44ad] bg-white font-mono text-sm py-1 px-1.5 cursor-pointer focus:outline-none focus:border-[#6c3483]">
+          {OPCIONES_REDONDEO.map(([val, label]) => (
+            <option key={val} value={val}>{label}</option>
+          ))}
+        </select>
       </td>
       <td className="table-cell"><span className="calculated-cell">{formatCOP(precio)}</span></td>
       <td className="table-cell"><span className="code-cell">{codigoLetras}</span></td>
@@ -365,7 +382,7 @@ export default function App() {
     setProducts(data.map(p => ({
       ...p,
       margen: 30,
-      aproximado: false,
+      redondeo: 'auto', // por defecto, redondeo inteligente según el precio
       revisado: false,
       etiquetas: p.cantidad, // por defecto, una etiqueta por unidad
     })))
@@ -449,9 +466,10 @@ export default function App() {
     showToast(`Margen ${valor}% aplicado a todos los productos`, 'success')
   }
 
-  function handleAproximarAll() {
-    setProducts(prev => prev.map(p => ({ ...p, aproximado: true })))
-    showToast('Aproximación a 1.000 activada para todos', 'success')
+  function handleRedondeoAll(modo) {
+    setProducts(prev => prev.map(p => ({ ...p, redondeo: modo })))
+    const label = (OPCIONES_REDONDEO.find(([v]) => v === modo) || [, modo])[1]
+    showToast(`Redondeo "${label}" aplicado a todos`, 'success')
   }
 
   function handleEtiquetasAll(valor) {
@@ -468,11 +486,7 @@ export default function App() {
   }
 
   function calcPrecio(p) {
-    let precio = p.precio_unitario
-    precio = precio * (1 + p.margen / 100)
-    if (p.aproximado) precio = aproximar(precio)
-    else precio = Math.round(precio)
-    return precio
+    return redondear(p.precio_unitario * (1 + p.margen / 100), p.redondeo)
   }
 
   // ─── Búsqueda tipo Ctrl+F: coincidencias ordenadas por relevancia ───
@@ -678,10 +692,18 @@ export default function App() {
                   % Margen a todos
                 </button>
               </div>
-              <button onClick={handleAproximarAll}
-                className="px-4 py-2 border-2 border-[#8e44ad] text-[#8e44ad] font-semibold text-sm font-mono hover:bg-[#8e44ad] hover:text-white transition-colors">
-                ↑ Aproximar todos
-              </button>
+              {/* Redondeo a todos */}
+              <div className="flex items-center border-2 border-[#8e44ad] font-mono text-sm">
+                <span className="pl-3 pr-2 text-[#8e44ad] font-semibold">Redondeo a todos:</span>
+                <select onChange={(e) => { if (e.target.value) { handleRedondeoAll(e.target.value); e.target.value = '' } }}
+                  defaultValue=""
+                  className="py-2 pr-2 text-[#8e44ad] font-semibold bg-transparent border-l-2 border-[#8e44ad] cursor-pointer focus:outline-none">
+                  <option value="" disabled>elegir…</option>
+                  {OPCIONES_REDONDEO.map(([val, label]) => (
+                    <option key={val} value={val}>{label}</option>
+                  ))}
+                </select>
+              </div>
               {/* Etiquetas a todos */}
               <div className="flex items-center border-2 border-[#8e44ad] font-mono text-sm">
                 <span className="pl-3 pr-2 text-[#8e44ad] font-semibold">🏷 Etiquetas:</span>
@@ -771,7 +793,7 @@ export default function App() {
                       ['precio_unitario', 'Precio unitario'],
                       ['margen', 'Margen (%)'],
                       ['iva', 'IVA factura'],
-                      [null, 'Aprox.'],
+                      [null, 'Redondeo'],
                       ['precio_venta', 'Precio venta'],
                       [null, 'Código letras'],
                     ].map(([col, label]) => (
