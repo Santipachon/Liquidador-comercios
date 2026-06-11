@@ -1,6 +1,6 @@
 import { useNavigate, useOutletContext } from 'react-router-dom'
-import { getPendientes, getFacturas } from '../lib/db'
-import { formatCOP } from '../lib/shared'
+import { getPendientes, getFacturas, creditosPorVencer } from '../lib/db'
+import { formatCOP, provNombre, fechaCorta } from '../lib/shared'
 
 const CARDS = [
   { to: '/pendientes', ico: '🛒', t: 'Lo que pide la gente', d: 'Anotar lo que piden los clientes' },
@@ -21,6 +21,7 @@ export default function Home() {
   const avisar = pendientes.filter(p => p.estado === 'llego').length
   const facturas = getFacturas()
   const ganMes = facturas.reduce((s, f) => s + (f.ganancia || 0), 0)
+  const creditos = esAdmin ? creditosPorVencer(3) : []
 
   return (
     <div className="space-y-6">
@@ -28,6 +29,21 @@ export default function Home() {
         <h2 className="text-2xl font-bold font-mono">Hola, {usuario?.nombre} 👋</h2>
         <p className="text-[#666] text-sm">¿Qué desea hacer hoy?</p>
       </div>
+
+      {creditos.length > 0 && (
+        <div className="border-l-[5px] border-[#c0392b] bg-[#fdecea] px-4 py-3">
+          <p className="font-mono font-bold text-[#c0392b] text-sm mb-1">⏰ {creditos.length} crédito(s) por vencer o vencido(s)</p>
+          <ul className="text-sm text-[#7f1d1d] space-y-0.5">
+            {creditos.slice(0, 4).map(c => (
+              <li key={c.id} className="font-mono">
+                {c.numero} · {provNombre(c.sigla)} · vence {fechaCorta(c.pago.vencimiento)}{' '}
+                {c.diasRestantes < 0 ? `(vencido hace ${-c.diasRestantes} día/s)` : c.diasRestantes === 0 ? '(HOY)' : `(en ${c.diasRestantes} día/s)`}
+              </li>
+            ))}
+          </ul>
+          <button className="text-[#c0392b] font-mono text-xs font-semibold hover:underline mt-2" onClick={() => nav('/creditos')}>Ir a control de créditos →</button>
+        </div>
+      )}
 
       {esAdmin && (
         <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))' }}>

@@ -5,6 +5,7 @@ import Pendientes from './screens/Pendientes'
 import Catalogo from './screens/Catalogo'
 import DetalleProducto from './screens/DetalleProducto'
 import Pedidos from './screens/Pedidos'
+import Creditos from './screens/Creditos'
 import Dashboard from './screens/Dashboard'
 import Historial from './screens/Historial'
 import Liquidador from './screens/Liquidador'
@@ -21,6 +22,7 @@ const NAV = [
   { to: '/pendientes', t: 'Pendientes' },
   { to: '/catalogo', t: 'Catálogo', admin: true },
   { to: '/pedidos', t: 'Pedidos', admin: true },
+  { to: '/creditos', t: 'Créditos', admin: true },
   { to: '/liquidar', t: 'Liquidar', admin: true },
   { to: '/dashboard', t: 'Reportes', admin: true },
   { to: '/historial', t: 'Historial', admin: true },
@@ -139,6 +141,7 @@ export default function App() {
           <Route path="catalogo" element={admin(<Catalogo />)} />
           <Route path="catalogo/:key" element={admin(<DetalleProducto />)} />
           <Route path="pedidos" element={admin(<Pedidos />)} />
+          <Route path="creditos" element={admin(<Creditos />)} />
           <Route path="liquidar" element={admin(<LiquidarScreen />)} />
           <Route path="dashboard" element={admin(<Dashboard />)} />
           <Route path="historial" element={admin(<Historial />)} />

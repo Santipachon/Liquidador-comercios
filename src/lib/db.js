@@ -11,14 +11,49 @@ const norm = s => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '
 function read() { try { return JSON.parse(localStorage.getItem(KEY)) || {} } catch { return {} } }
 function write(d) { localStorage.setItem(KEY, JSON.stringify(d)) }
 
+const CONFIG_DEFAULT = {
+  nombre: 'ALMACÉN EL ACERO', nit: '9517525-8', propietario: 'Nayibe Talero',
+  direccion: '', ciudad: '', telefono: '',
+}
+
 let cache = (() => {
   const d = read()
   d.facturas = d.facturas || []
   d.catalogo = d.catalogo || []
   d.pendientes = d.pendientes || []
+  d.pedidos = d.pedidos || []
+  d.pedidoSeq = d.pedidoSeq || 0
+  d.config = { ...CONFIG_DEFAULT, ...(d.config || {}) }
   return d
 })()
 function persist() { write(cache) }
+
+// ─── Configuración del almacén (encabezado de comprobantes) ───
+export function getConfig() { return { ...cache.config } }
+export function setConfig(patch) { cache.config = { ...cache.config, ...patch }; persist() }
+
+// ─── Pedidos / comprobantes a proveedores ───
+export function getPedidos() { return [...cache.pedidos].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')) }
+export function getPedido(id) { return cache.pedidos.find(p => p.id === id) }
+export function siguienteNumeroPedido() { return 'PED-' + String((cache.pedidoSeq || 0) + 1).padStart(4, '0') }
+export function addPedido(p) {
+  cache.pedidoSeq = (cache.pedidoSeq || 0) + 1
+  const pedido = { id: 'ped' + Date.now(), numero: 'PED-' + String(cache.pedidoSeq).padStart(4, '0'), creado: new Date().toISOString(), estadoPago: 'pendiente', ...p }
+  cache.pedidos.unshift(pedido)
+  persist()
+  return pedido
+}
+export function updatePedido(id, patch) {
+  const p = cache.pedidos.find(x => x.id === id); if (p) Object.assign(p, patch); persist()
+}
+// Créditos próximos a vencer o vencidos (no pagados, dentro de `dias` días o ya vencidos)
+export function creditosPorVencer(dias = 3) {
+  const hoy = Date.now()
+  return cache.pedidos.filter(p => p.pago?.tipo === 'credito' && p.estadoPago !== 'pagado' && p.pago?.vencimiento)
+    .map(p => ({ ...p, diasRestantes: Math.ceil((new Date(p.pago.vencimiento).getTime() - hoy) / 86400000) }))
+    .filter(p => p.diasRestantes <= dias)
+    .sort((a, b) => a.diasRestantes - b.diasRestantes)
+}
 
 // ─── Facturas (historial) ───
 export function getFacturas() {
