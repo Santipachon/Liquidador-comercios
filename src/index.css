@@ -61,6 +61,40 @@
     @apply font-mono text-sm tracking-widest bg-[#f0fdf4] px-3 py-1
     border border-[#86efac] text-[#166534] inline-block;
   }
+
+  /* ─── Plataforma ─── */
+  .sec-title {
+    @apply font-mono text-xs uppercase tracking-widest text-[#666]
+    border-b border-[#e0ddd5] pb-1.5 mb-3 mt-7;
+  }
+  .pcard {
+    @apply bg-white border border-[#e0ddd5] p-5;
+  }
+  .kpi {
+    @apply bg-white border border-[#e0ddd5] p-4;
+    border-left: 5px solid #1a1a1a;
+  }
+  .kpi .k-l { @apply text-[10px] uppercase tracking-widest text-[#999] font-mono; }
+  .kpi .k-v { @apply text-2xl font-bold font-mono mt-1; }
+  .navlink {
+    @apply px-3 py-2 font-mono text-sm text-[#bbb] no-underline transition-colors cursor-pointer;
+  }
+  .navlink:hover { @apply text-white bg-[#333]; }
+  .navlink.active { @apply text-white bg-[#333]; }
+  .input-plat {
+    @apply border-2 border-[#1a1a1a] bg-white font-mono text-sm py-2 px-3
+    outline-none transition-colors w-full;
+  }
+  .input-plat:focus { @apply border-[#2980b9]; }
+  .btn-plat {
+    @apply border-2 border-[#1a1a1a] bg-white font-semibold text-sm font-mono
+    px-4 py-2 transition-colors cursor-pointer;
+  }
+  .btn-plat:hover { @apply bg-[#1a1a1a] text-white; }
+}
+
+@layer utilities {
+  .barfill { transition: width .4s ease; }
 }
 
 @layer utilities {
