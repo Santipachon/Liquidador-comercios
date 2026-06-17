@@ -787,102 +787,92 @@ export default function Liquidador({ onGuardar }) {
 
         {hasProducts && (
           <section className="space-y-4 fade-in">
-            {/* Barra de acciones globales */}
-            <div className="flex gap-3 flex-wrap items-center">
-              <div className="bg-[#f0fdf4] border border-[#86efac] px-4 py-2 font-mono text-sm text-[#1a6b3c]">
-                ● Precio calculado sobre precio unitario
-              </div>
-              <div className="flex items-center border-2 border-[#2980b9]">
-                <input
-                  type="number" min="0" max="999" placeholder="%" value={margenGlobal}
-                  onChange={(e) => setMargenGlobal(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleMargenAll()}
-                  className="w-16 px-2 py-2 text-sm font-mono font-semibold text-[#2980b9] bg-transparent outline-none text-center placeholder:text-[#2980b9]/40"
-                />
-                <button onClick={handleMargenAll}
-                  disabled={margenGlobal === '' || isNaN(parseFloat(margenGlobal))}
-                  className="px-4 py-2 bg-transparent text-[#2980b9] font-semibold text-sm font-mono border-l-2 border-[#2980b9] hover:bg-[#2980b9] hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[#2980b9]">
-                  % Margen a todos
-                </button>
-              </div>
-              {/* Redondeo a todos */}
-              <div className="flex items-center border-2 border-[#8e44ad] font-mono text-sm">
-                <span className="pl-3 pr-2 text-[#8e44ad] font-semibold">Redondeo a todos:</span>
-                <select onChange={(e) => { if (e.target.value) { handleRedondeoAll(e.target.value); e.target.value = '' } }}
-                  defaultValue=""
-                  className="py-2 pr-2 text-[#8e44ad] font-semibold bg-transparent border-l-2 border-[#8e44ad] cursor-pointer focus:outline-none">
-                  <option value="" disabled>elegir…</option>
-                  {OPCIONES_REDONDEO.map(([val, label]) => (
-                    <option key={val} value={val}>{label}</option>
-                  ))}
-                </select>
-              </div>
-              {/* Etiquetas a todos */}
-              <div className="flex items-center border-2 border-[#8e44ad] font-mono text-sm">
-                <span className="pl-3 pr-2 text-[#8e44ad] font-semibold">🏷 Etiquetas:</span>
-                <button onClick={() => handleEtiquetasAll(1)}
-                  title="1 etiqueta por producto (para tornillos, tuercas, etc.)"
-                  className="px-3 py-2 text-[#8e44ad] font-semibold border-l-2 border-[#8e44ad] hover:bg-[#8e44ad] hover:text-white transition-colors">
-                  todas a 1
-                </button>
-                <button onClick={() => handleEtiquetasAll('cantidad')}
-                  title="Volver al default: una etiqueta por unidad (= cantidad de la factura)"
-                  className="px-3 py-2 text-[#8e44ad] font-semibold border-l-2 border-[#8e44ad] hover:bg-[#8e44ad] hover:text-white transition-colors">
-                  = cantidad
-                </button>
+            {/* Controles en dos grupos claros (sin saturar) */}
+            <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))' }}>
+
+              {/* Grupo 1 · Aplicar a todos los productos */}
+              <div className="bg-white border border-[#e7e2d8] rounded-2xl p-4">
+                <p className="text-xs font-semibold uppercase tracking-wider text-[#666] mb-3">⚙ Aplicar a todos</p>
+                <div className="flex flex-wrap gap-x-6 gap-y-3 items-end">
+                  <label className="flex flex-col gap-1 text-xs font-semibold text-[#666]"><span>Margen %</span>
+                    <div className="flex gap-2">
+                      <input type="number" min="0" max="999" placeholder="30" value={margenGlobal}
+                        onChange={(e) => setMargenGlobal(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleMargenAll()}
+                        className="w-16 border-2 border-[#2980b9] py-2 px-2 text-center font-semibold text-[#2980b9] outline-none" />
+                      <button onClick={handleMargenAll} disabled={margenGlobal === '' || isNaN(parseFloat(margenGlobal))}
+                        className="px-3 py-2 border-2 border-[#2980b9] text-[#2980b9] font-semibold hover:bg-[#2980b9] hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed">Aplicar</button>
+                    </div>
+                  </label>
+                  <label className="flex flex-col gap-1 text-xs font-semibold text-[#666]"><span>Redondeo</span>
+                    <select onChange={(e) => { if (e.target.value) { handleRedondeoAll(e.target.value); e.target.value = '' } }}
+                      defaultValue=""
+                      className="border-2 border-[#8e44ad] text-[#8e44ad] font-semibold py-2 px-2 cursor-pointer outline-none">
+                      <option value="" disabled>elegir…</option>
+                      {OPCIONES_REDONDEO.map(([val, label]) => <option key={val} value={val}>{label}</option>)}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1 text-xs font-semibold text-[#666]"><span>🏷 Etiquetas</span>
+                    <div className="flex gap-2">
+                      <button onClick={() => handleEtiquetasAll(1)} title="1 etiqueta por producto (tornillos, tuercas…)"
+                        className="px-3 py-2 border-2 border-[#8e44ad] text-[#8e44ad] font-semibold hover:bg-[#8e44ad] hover:text-white transition-colors">Todas a 1</button>
+                      <button onClick={() => handleEtiquetasAll('cantidad')} title="Una etiqueta por unidad (= cantidad de la factura)"
+                        className="px-3 py-2 border-2 border-[#8e44ad] text-[#8e44ad] font-semibold hover:bg-[#8e44ad] hover:text-white transition-colors">= cantidad</button>
+                    </div>
+                  </label>
+                </div>
               </div>
 
-              {/* ─── Filtro (alineado a la derecha) ─── */}
-              <div className="ml-auto flex items-center gap-2 flex-wrap">
-                {/* Buscador tipo Ctrl+F con modo "ir a" / "ocultar" */}
-                <div className="flex items-center">
-                  <div className="relative">
-                    <input
-                      type="text" placeholder="🔍 Buscar producto..." value={busqueda}
-                      onChange={(e) => setBusqueda(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !modoFiltro && coincidencias.length > 0) irAProducto(coincidencias[0].idx)
-                        if (e.key === 'Escape') setBusqueda('')
-                      }}
-                      className="w-56 px-3 py-2 border-2 border-r-0 border-[#33302b] bg-white font-mono text-sm outline-none focus:border-[#2980b9] transition-colors"
-                    />
-                    {!modoFiltro && busqueda.trim() !== '' && (
-                      <div className="absolute top-full right-0 mt-1 w-96 max-w-[90vw] bg-white border-2 border-[#33302b] shadow-xl z-30 max-h-80 overflow-y-auto">
-                        {coincidencias.length === 0 ? (
-                          <p className="px-4 py-3 text-sm font-mono text-[#999]">Sin coincidencias</p>
-                        ) : (
-                          coincidencias.map(({ p, idx }) => (
-                            <button key={idx} onClick={() => irAProducto(idx)}
-                              className="w-full text-left px-4 py-2.5 hover:bg-[#fffbe6] border-b border-[#eee] last:border-b-0 transition-colors">
-                              <span className="block text-sm font-semibold text-[#33302b] truncate">{p.nombre}</span>
-                              <span className="block text-xs font-mono text-[#999]">{p.codigo} · {formatCOP(p.precio_unitario)} · {p.cantidad} und</span>
-                            </button>
-                          ))
+              {/* Grupo 2 · Buscar y filtrar */}
+              <div className="bg-white border border-[#e7e2d8] rounded-2xl p-4">
+                <p className="text-xs font-semibold uppercase tracking-wider text-[#666] mb-3">🔍 Buscar y filtrar</p>
+                <div className="flex flex-wrap gap-x-6 gap-y-3 items-end">
+                  <label className="flex flex-col gap-1 text-xs font-semibold text-[#666] flex-1" style={{ minWidth: 220 }}><span>Buscar producto</span>
+                    <div className="flex gap-2">
+                      <div className="relative flex-1">
+                        <input type="text" placeholder="Nombre del producto…" value={busqueda}
+                          onChange={(e) => setBusqueda(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !modoFiltro && coincidencias.length > 0) irAProducto(coincidencias[0].idx)
+                            if (e.key === 'Escape') setBusqueda('')
+                          }}
+                          className="w-full border-2 border-[#33302b] py-2 px-3 outline-none focus:border-[#2980b9] transition-colors" />
+                        {!modoFiltro && busqueda.trim() !== '' && (
+                          <div className="absolute top-full left-0 mt-1 w-96 max-w-[90vw] bg-white border-2 border-[#33302b] rounded-xl shadow-xl z-30 max-h-80 overflow-y-auto">
+                            {coincidencias.length === 0 ? (
+                              <p className="px-4 py-3 text-sm text-[#999]">Sin coincidencias</p>
+                            ) : coincidencias.map(({ p, idx }) => (
+                              <button key={idx} onClick={() => irAProducto(idx)}
+                                className="w-full text-left px-4 py-2.5 hover:bg-[#fffbe6] border-b border-[#eee] last:border-b-0 transition-colors">
+                                <span className="block text-sm font-semibold text-[#33302b] truncate">{p.nombre}</span>
+                                <span className="block text-xs font-mono text-[#777]">{p.codigo} · {formatCOP(p.precio_unitario)} · {p.cantidad} und</span>
+                              </button>
+                            ))}
+                          </div>
                         )}
                       </div>
-                    )}
-                  </div>
-                  <button onClick={() => setModoFiltro(v => !v)}
-                    title={modoFiltro ? 'Modo actual: ocultar productos que no coinciden. Clic para cambiar a "ir al producto"' : 'Modo actual: ir al producto. Clic para cambiar a "ocultar los que no coinciden"'}
-                    className={`px-3 py-2 border-2 border-[#33302b] font-mono text-sm font-semibold whitespace-nowrap transition-colors ${modoFiltro ? 'bg-[#33302b] text-white' : 'bg-white text-[#33302b] hover:bg-[#33302b] hover:text-white'}`}>
-                    {modoFiltro ? '👁 Ocultar' : '→ Ir a'}
-                  </button>
-                </div>
-                {/* Filtro por rango de precio unitario */}
-                <div className="flex items-center border-2 border-[#33302b] bg-white font-mono text-sm" title="Mostrar solo productos con precio unitario dentro del rango">
-                  <span className="pl-2 pr-1 text-[#999]">$</span>
-                  <input type="number" min="0" placeholder="mín" value={precioMin}
-                    onChange={(e) => setPrecioMin(e.target.value)}
-                    className="w-20 py-2 outline-none text-center placeholder:text-[#bbb]" />
-                  <span className="text-[#999]">—</span>
-                  <input type="number" min="0" placeholder="máx" value={precioMax}
-                    onChange={(e) => setPrecioMax(e.target.value)}
-                    className="w-20 py-2 outline-none text-center placeholder:text-[#bbb]" />
-                  {(precioMin !== '' || precioMax !== '') && (
-                    <button onClick={() => { setPrecioMin(''); setPrecioMax('') }}
-                      title="Quitar filtro de precio"
-                      className="px-2 py-2 text-[#c0392b] font-bold hover:bg-[#fdf2f2] transition-colors">×</button>
-                  )}
+                      <button onClick={() => setModoFiltro(v => !v)}
+                        title={modoFiltro ? 'Modo: ocultar los que no coinciden. Clic para cambiar a "ir al producto"' : 'Modo: ir al producto. Clic para cambiar a "ocultar los que no coinciden"'}
+                        className={`px-3 py-2 border-2 border-[#33302b] font-semibold whitespace-nowrap transition-colors ${modoFiltro ? 'bg-[#33302b] text-white' : 'bg-white text-[#33302b] hover:bg-[#33302b] hover:text-white'}`}>
+                        {modoFiltro ? '👁 Ocultar' : '→ Ir a'}
+                      </button>
+                    </div>
+                  </label>
+                  <label className="flex flex-col gap-1 text-xs font-semibold text-[#666]"><span>Precio unitario $</span>
+                    <div className="flex items-center gap-1.5">
+                      <input type="number" min="0" placeholder="mín" value={precioMin}
+                        onChange={(e) => setPrecioMin(e.target.value)}
+                        className="w-20 border-2 border-[#33302b] py-2 px-2 text-center outline-none placeholder:text-[#bbb]" />
+                      <span className="text-[#999]">—</span>
+                      <input type="number" min="0" placeholder="máx" value={precioMax}
+                        onChange={(e) => setPrecioMax(e.target.value)}
+                        className="w-20 border-2 border-[#33302b] py-2 px-2 text-center outline-none placeholder:text-[#bbb]" />
+                      {(precioMin !== '' || precioMax !== '') && (
+                        <button onClick={() => { setPrecioMin(''); setPrecioMax('') }} title="Quitar filtro de precio"
+                          className="text-[#c0392b] font-bold px-1.5">×</button>
+                      )}
+                    </div>
+                  </label>
                 </div>
               </div>
             </div>
