@@ -89,7 +89,7 @@ export default function Catalogo() {
             <table className="w-full border-collapse text-sm">
               <thead><tr>
                 {['Producto', 'Cód. prov.', 'Prov.', 'Últ. costo', 'Precio venta', 'Cód. interno', 'Compras', ''].map(h =>
-                  <th key={h} className="bg-[#1a1a1a] text-white text-left px-3 py-2 text-xs font-mono uppercase tracking-wider sticky top-0">{h}</th>)}
+                  <th key={h} className="bg-[#33302b] text-white text-left px-3 py-2 text-xs font-mono uppercase tracking-wider sticky top-0">{h}</th>)}
               </tr></thead>
               <tbody>
                 {mostrados.map(p => (

@@ -50,8 +50,8 @@ function Grafico({ hist }) {
           </g>
         ))}
         {/* Ejes */}
-        <line x1={padL} y1={padT} x2={padL} y2={H - padB} stroke="#1a1a1a" strokeWidth="1" />
-        <line x1={padL} y1={H - padB} x2={W - padR} y2={H - padB} stroke="#1a1a1a" strokeWidth="1" />
+        <line x1={padL} y1={padT} x2={padL} y2={H - padB} stroke="#33302b" strokeWidth="1" />
+        <line x1={padL} y1={H - padB} x2={W - padR} y2={H - padB} stroke="#33302b" strokeWidth="1" />
         {/* Guía vertical en hover */}
         {hover != null && <line x1={x(hover)} y1={padT} x2={x(hover)} y2={H - padB} stroke="#bbb" strokeWidth="1" strokeDasharray="3 3" />}
         {linea('venta', '#1a6b3c')}{linea('costo', '#c0392b')}
@@ -62,14 +62,14 @@ function Grafico({ hist }) {
             fill="transparent" onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} onClick={() => setHover(i)} style={{ cursor: 'pointer' }} />
         })}
         {/* Fechas eje X */}
-        {hist.map((hh, i) => <text key={i} x={x(i)} y={H - 9} fontSize="10" fill={hover === i ? '#1a1a1a' : '#999'} textAnchor="middle" fontFamily="monospace">{fechaCorta(hh.fecha)}</text>)}
+        {hist.map((hh, i) => <text key={i} x={x(i)} y={H - 9} fontSize="10" fill={hover === i ? '#33302b' : '#999'} textAnchor="middle" fontFamily="monospace">{fechaCorta(hh.fecha)}</text>)}
       </svg>
 
       {h && (
-        <div className="absolute z-20 bg-white border-2 border-[#1a1a1a] text-xs font-mono px-3 py-2 shadow-xl pointer-events-none"
+        <div className="absolute z-20 bg-white border-2 border-[#33302b] text-xs font-mono px-3 py-2 shadow-xl pointer-events-none"
           style={{ left: `${x(hover) / W * 100}%`, top: `${Math.min(y(h.costo), y(h.venta)) / H * 100}%`, transform: 'translate(-50%, calc(-100% - 12px))', minWidth: 150 }}>
-          <div className="font-bold text-[#1a1a1a] mb-1 border-b border-[#e0ddd5] pb-1">{fechaCorta(h.fecha)}</div>
-          {h.cantidad != null && <div className="text-[#1a1a1a]">Llegaron: <b>{h.cantidad}</b> und</div>}
+          <div className="font-bold text-[#33302b] mb-1 border-b border-[#e0ddd5] pb-1">{fechaCorta(h.fecha)}</div>
+          {h.cantidad != null && <div className="text-[#33302b]">Llegaron: <b>{h.cantidad}</b> und</div>}
           <div className="text-[#c0392b]">Costo: {formatCOP(h.costo)}</div>
           {h.margen != null && <div className="text-[#555]">Margen: <b>{h.margen}%</b></div>}
           {h.redondeo != null && <div className="text-[#999]">Redondeo: {redLabel(h.redondeo)}</div>}
@@ -122,12 +122,12 @@ export default function DetalleProducto() {
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm">
             <thead><tr>{['Fecha', 'Unid.', 'Costo', 'Margen', 'Precio venta', 'Variación costo'].map(h =>
-              <th key={h} className="bg-[#1a1a1a] text-white text-left px-3 py-2 text-xs font-mono uppercase tracking-wider">{h}</th>)}</tr></thead>
+              <th key={h} className="bg-[#33302b] text-white text-left px-3 py-2 text-xs font-mono uppercase tracking-wider">{h}</th>)}</tr></thead>
             <tbody>
               {hist.map((x, i) => {
                 const prev = i > 0 ? hist[i - 1].costo : null
                 const dif = prev ? (((x.costo - prev) / prev) * 100).toFixed(1) : null
-                const col = prev ? (x.costo > prev ? '#c0392b' : x.costo < prev ? '#1a6b3c' : '#1a1a1a') : '#1a1a1a'
+                const col = prev ? (x.costo > prev ? '#c0392b' : x.costo < prev ? '#1a6b3c' : '#33302b') : '#33302b'
                 return (
                   <tr key={i} className="border-b border-[#e0ddd5]">
                     <td className="px-3 py-2 font-mono">{fechaCorta(x.fecha)}</td>

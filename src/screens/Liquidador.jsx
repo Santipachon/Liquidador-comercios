@@ -248,15 +248,15 @@ function UploadZone({ onFile, loading }) {
         disabled={loading} />
       {loading ? (
         <div className="flex flex-col items-center gap-4">
-          <div className="w-14 h-14 border-4 border-[#1a1a1a] border-t-transparent rounded-full animate-spin" />
-          <p className="text-2xl font-semibold text-[#1a1a1a]">Procesando factura...</p>
+          <div className="w-14 h-14 border-4 border-[#33302b] border-t-transparent rounded-full animate-spin" />
+          <p className="text-2xl font-semibold text-[#33302b]">Procesando factura...</p>
           <p className="text-base text-[#666]">Por favor espere</p>
         </div>
       ) : (
         <>
-          <div className="text-[#1a1a1a] pulse-ring"><IconUpload /></div>
+          <div className="text-[#33302b] pulse-ring"><IconUpload /></div>
           <div className="text-center">
-            <p className="text-3xl font-bold text-[#1a1a1a] tracking-tight">+ Subir factura</p>
+            <p className="text-3xl font-bold text-[#33302b] tracking-tight">+ Subir factura</p>
             <p className="text-lg text-[#666] mt-2">Haga clic aquí o arrastre su archivo</p>
           </div>
           <span className="text-sm font-mono text-[#999] bg-[#e8e6e0] px-3 py-1">Archivos .xml o .zip</span>
@@ -343,7 +343,7 @@ function ProductRow({ product, index, origIndex, onUpdate, rowRef, highlighted }
 // ─── Toast ────────────────────────────────────────────────────────────────────
 function Toast({ message, type }) {
   if (!message) return null
-  const colors = { error: 'bg-[#c0392b] text-white', success: 'bg-[#1a6b3c] text-white', info: 'bg-[#1a1a1a] text-white' }
+  const colors = { error: 'bg-[#c0392b] text-white', success: 'bg-[#1a6b3c] text-white', info: 'bg-[#33302b] text-white' }
   return <div className={`fixed bottom-6 right-6 z-50 px-6 py-4 font-semibold text-base shadow-xl fade-in max-w-sm ${colors[type] || colors.info}`}>{message}</div>
 }
 
@@ -766,8 +766,8 @@ export default function Liquidador({ onGuardar }) {
 
         {/* Vista previa PDF */}
         {pdfUrl && (
-          <div className="border-2 border-[#1a1a1a] bg-white fade-in">
-            <div className="bg-[#1a1a1a] text-white px-4 py-2 flex items-center justify-between">
+          <div className="border-2 border-[#33302b] bg-white fade-in">
+            <div className="bg-[#33302b] text-white px-4 py-2 flex items-center justify-between">
               <span className="font-mono text-sm">Vista previa — Factura PDF</span>
               <button onClick={() => window.open(pdfUrl, '_blank')}
                 className="text-xs font-mono text-[#aaa] hover:text-white transition-colors">
@@ -844,17 +844,17 @@ export default function Liquidador({ onGuardar }) {
                         if (e.key === 'Enter' && !modoFiltro && coincidencias.length > 0) irAProducto(coincidencias[0].idx)
                         if (e.key === 'Escape') setBusqueda('')
                       }}
-                      className="w-56 px-3 py-2 border-2 border-r-0 border-[#1a1a1a] bg-white font-mono text-sm outline-none focus:border-[#2980b9] transition-colors"
+                      className="w-56 px-3 py-2 border-2 border-r-0 border-[#33302b] bg-white font-mono text-sm outline-none focus:border-[#2980b9] transition-colors"
                     />
                     {!modoFiltro && busqueda.trim() !== '' && (
-                      <div className="absolute top-full right-0 mt-1 w-96 max-w-[90vw] bg-white border-2 border-[#1a1a1a] shadow-xl z-30 max-h-80 overflow-y-auto">
+                      <div className="absolute top-full right-0 mt-1 w-96 max-w-[90vw] bg-white border-2 border-[#33302b] shadow-xl z-30 max-h-80 overflow-y-auto">
                         {coincidencias.length === 0 ? (
                           <p className="px-4 py-3 text-sm font-mono text-[#999]">Sin coincidencias</p>
                         ) : (
                           coincidencias.map(({ p, idx }) => (
                             <button key={idx} onClick={() => irAProducto(idx)}
                               className="w-full text-left px-4 py-2.5 hover:bg-[#fffbe6] border-b border-[#eee] last:border-b-0 transition-colors">
-                              <span className="block text-sm font-semibold text-[#1a1a1a] truncate">{p.nombre}</span>
+                              <span className="block text-sm font-semibold text-[#33302b] truncate">{p.nombre}</span>
                               <span className="block text-xs font-mono text-[#999]">{p.codigo} · {formatCOP(p.precio_unitario)} · {p.cantidad} und</span>
                             </button>
                           ))
@@ -864,12 +864,12 @@ export default function Liquidador({ onGuardar }) {
                   </div>
                   <button onClick={() => setModoFiltro(v => !v)}
                     title={modoFiltro ? 'Modo actual: ocultar productos que no coinciden. Clic para cambiar a "ir al producto"' : 'Modo actual: ir al producto. Clic para cambiar a "ocultar los que no coinciden"'}
-                    className={`px-3 py-2 border-2 border-[#1a1a1a] font-mono text-sm font-semibold whitespace-nowrap transition-colors ${modoFiltro ? 'bg-[#1a1a1a] text-white' : 'bg-white text-[#1a1a1a] hover:bg-[#1a1a1a] hover:text-white'}`}>
+                    className={`px-3 py-2 border-2 border-[#33302b] font-mono text-sm font-semibold whitespace-nowrap transition-colors ${modoFiltro ? 'bg-[#33302b] text-white' : 'bg-white text-[#33302b] hover:bg-[#33302b] hover:text-white'}`}>
                     {modoFiltro ? '👁 Ocultar' : '→ Ir a'}
                   </button>
                 </div>
                 {/* Filtro por rango de precio unitario */}
-                <div className="flex items-center border-2 border-[#1a1a1a] bg-white font-mono text-sm" title="Mostrar solo productos con precio unitario dentro del rango">
+                <div className="flex items-center border-2 border-[#33302b] bg-white font-mono text-sm" title="Mostrar solo productos con precio unitario dentro del rango">
                   <span className="pl-2 pr-1 text-[#999]">$</span>
                   <input type="number" min="0" placeholder="mín" value={precioMin}
                     onChange={(e) => setPrecioMin(e.target.value)}
@@ -894,7 +894,7 @@ export default function Liquidador({ onGuardar }) {
               </div>
             )}
 
-            <div className="border-2 border-[#1a1a1a] bg-white overflow-x-auto">
+            <div className="border-2 border-[#33302b] bg-white overflow-x-auto">
               <table className="w-full border-collapse min-w-[860px]">
                 <thead>
                   <tr>
@@ -937,7 +937,7 @@ export default function Liquidador({ onGuardar }) {
             </div>
 
             {/* ─── Resumen de la factura (siempre sobre el total, no sobre lo filtrado) ─── */}
-            <div className="border-t-2 border-[#1a1a1a] pt-4">
+            <div className="border-t-2 border-[#33302b] pt-4">
               <p className="text-sm font-mono font-semibold text-[#555] uppercase tracking-widest mb-3">Resumen de la factura</p>
               <div className="flex flex-wrap gap-3">
                 {/* Sigla del proveedor: asignada automáticamente por NIT, editable */}
@@ -947,7 +947,7 @@ export default function Liquidador({ onGuardar }) {
                     type="text" value={siglaFactura} list="lista-siglas"
                     onChange={(e) => setSiglaFactura(e.target.value.toUpperCase())}
                     placeholder="ASIGNAR..."
-                    className="w-full bg-transparent font-mono font-bold text-base text-[#1a1a1a] outline-none uppercase placeholder:text-[#d4a017] placeholder:font-normal"
+                    className="w-full bg-transparent font-mono font-bold text-base text-[#33302b] outline-none uppercase placeholder:text-[#d4a017] placeholder:font-normal"
                   />
                   <datalist id="lista-siglas">
                     {PROVEEDORES.map((p, i) => <option key={i} value={p.sigla}>{p.nombre}</option>)}
@@ -970,7 +970,7 @@ export default function Liquidador({ onGuardar }) {
                 ].map(([label, value]) => (
                   <div key={label} className="bg-white border border-[#e0ddd5] px-4 py-2.5 min-w-[130px]">
                     <p className="text-[10px] font-mono uppercase tracking-widest text-[#999] mb-0.5">{label}</p>
-                    <p className={`font-mono font-semibold text-base ${label === 'Ganancia estimada' ? (totales.ganancia >= 0 ? 'text-[#1a6b3c]' : 'text-[#c0392b]') : 'text-[#1a1a1a]'}`}>{value}</p>
+                    <p className={`font-mono font-semibold text-base ${label === 'Ganancia estimada' ? (totales.ganancia >= 0 ? 'text-[#1a6b3c]' : 'text-[#c0392b]') : 'text-[#33302b]'}`}>{value}</p>
                   </div>
                 ))}
               </div>
@@ -1007,7 +1007,7 @@ export default function Liquidador({ onGuardar }) {
             <div className="flex flex-wrap gap-2">
               {Object.entries(LETRA_MAP).map(([num, letra]) => (
                 <div key={num} className="bg-white border border-[#e0ddd5] px-3 py-1.5 flex items-center gap-1.5">
-                  <span className="font-mono font-bold text-[#1a1a1a]">{num}</span>
+                  <span className="font-mono font-bold text-[#33302b]">{num}</span>
                   <span className="text-[#ccc]">→</span>
                   <span className="font-mono font-bold text-[#1a6b3c]">{letra}</span>
                 </div>

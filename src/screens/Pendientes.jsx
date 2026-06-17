@@ -89,7 +89,7 @@ export default function Pendientes() {
           <input className="input-plat" placeholder="🔍 Escriba el producto (ej: cuña 8, rodamiento, aceite)…"
             value={q} onChange={e => { setQ(e.target.value); setSel(null) }} autoComplete="off" />
           {q.trim() && !sel && (
-            <div className="absolute left-0 right-0 top-full mt-1 bg-white border-2 border-[#1a1a1a] z-20 max-h-72 overflow-y-auto shadow-xl">
+            <div className="absolute left-0 right-0 top-full mt-1 bg-white border-2 border-[#33302b] z-20 max-h-72 overflow-y-auto shadow-xl">
               {matches.map((p, i) => (
                 <button key={i} onClick={() => elegir(p)} className="block w-full text-left px-3 py-2.5 border-b border-[#eee] hover:bg-[#fffbe6]">
                   <span className="block font-semibold text-sm">{p.nombre}</span>
@@ -134,7 +134,7 @@ export default function Pendientes() {
           {[['activos', `Activos (${cuenta.activos})`], ['pendiente', `Pendientes (${cuenta.pendiente})`], ['pedido', `Pedidos (${cuenta.pedido})`],
             ['llego', `Por avisar (${cuenta.llego})`], ['avisado', `Atendidos (${cuenta.avisado})`], ['todos', `Todos (${cuenta.todos})`]].map(([k, t]) => (
             <button key={k} onClick={() => setEstado(k)}
-              className={`px-3 py-1.5 font-mono text-xs border-2 transition-colors ${estado === k ? 'bg-[#1a1a1a] text-white border-[#1a1a1a]' : 'bg-white text-[#555] border-[#ddd] hover:border-[#1a1a1a]'}`}>{t}</button>
+              className={`px-3 py-1.5 font-mono text-xs border-2 transition-colors ${estado === k ? 'bg-[#33302b] text-white border-[#33302b]' : 'bg-white text-[#555] border-[#ddd] hover:border-[#33302b]'}`}>{t}</button>
           ))}
         </div>
 
@@ -146,7 +146,7 @@ export default function Pendientes() {
             </select>
           )}
           <label className="flex items-center gap-2 text-sm font-mono text-[#666] cursor-pointer">
-            <input type="checkbox" className="w-4 h-4 accent-[#1a1a1a]" checked={agrupar} onChange={e => setAgrupar(e.target.checked)} />
+            <input type="checkbox" className="w-4 h-4 accent-[#33302b]" checked={agrupar} onChange={e => setAgrupar(e.target.checked)} />
             Agrupar por proveedor
           </label>
           <span className="text-xs text-[#999] font-mono ml-auto">Mostrando {lista.length} de {todos.length}</span>
@@ -156,11 +156,11 @@ export default function Pendientes() {
           <p className="text-[#999] font-mono text-sm py-4">{todos.length === 0 ? 'Aún no hay pendientes. Agregue el primero arriba.' : 'Ningún pendiente con estos filtros.'}</p>
         ) : grupos.map(([sig, rows]) => (
           <div key={sig || 'all'} className="mb-5">
-            {agrupar && <p className="font-mono text-sm font-semibold text-[#1a1a1a] bg-[#f0f0ec] px-3 py-1.5 border-l-4 border-[#1a1a1a]">{sig === '—' || !sig ? 'Sin proveedor' : `${sig} · ${provNombre(sig)}`} <span className="text-[#999] font-normal">({rows.length})</span></p>}
+            {agrupar && <p className="font-mono text-sm font-semibold text-[#33302b] bg-[#f0f0ec] px-3 py-1.5 border-l-4 border-[#33302b]">{sig === '—' || !sig ? 'Sin proveedor' : `${sig} · ${provNombre(sig)}`} <span className="text-[#999] font-normal">({rows.length})</span></p>}
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-sm">
                 <thead><tr>{['Producto', 'Cant.', 'Cliente', 'Prov.', 'Estado', 'Acciones'].map(h =>
-                  <th key={h} className="bg-[#1a1a1a] text-white text-left px-3 py-2 text-xs font-mono uppercase tracking-wider">{h}</th>)}</tr></thead>
+                  <th key={h} className="bg-[#33302b] text-white text-left px-3 py-2 text-xs font-mono uppercase tracking-wider">{h}</th>)}</tr></thead>
                 <tbody>{rows.map(fila)}</tbody>
               </table>
             </div>

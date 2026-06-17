@@ -25,7 +25,7 @@ export default function Historial() {
         </div>
         <div className="pcard overflow-x-auto">
           <table className="w-full border-collapse text-sm">
-            <thead><tr>{['Producto', 'Cant.', 'Costo', 'Margen', 'Precio venta', 'Cód.'].map(h => <th key={h} className="bg-[#1a1a1a] text-white text-left px-3 py-2 text-xs font-mono uppercase tracking-wider">{h}</th>)}</tr></thead>
+            <thead><tr>{['Producto', 'Cant.', 'Costo', 'Margen', 'Precio venta', 'Cód.'].map(h => <th key={h} className="bg-[#33302b] text-white text-left px-3 py-2 text-xs font-mono uppercase tracking-wider">{h}</th>)}</tr></thead>
             <tbody>
               {fac.items.map((it, i) => (
                 <tr key={i} className="border-b border-[#e0ddd5]">
@@ -53,7 +53,7 @@ export default function Historial() {
       ) : (
         <div className="pcard overflow-x-auto">
           <table className="w-full border-collapse text-sm">
-            <thead><tr>{['Factura', 'Proveedor', 'Fecha', 'Productos', 'Costo', 'Ganancia', ''].map(h => <th key={h} className="bg-[#1a1a1a] text-white text-left px-3 py-2 text-xs font-mono uppercase tracking-wider">{h}</th>)}</tr></thead>
+            <thead><tr>{['Factura', 'Proveedor', 'Fecha', 'Productos', 'Costo', 'Ganancia', ''].map(h => <th key={h} className="bg-[#33302b] text-white text-left px-3 py-2 text-xs font-mono uppercase tracking-wider">{h}</th>)}</tr></thead>
             <tbody>
               {facturas.map(f => (
                 <tr key={f.id} className="border-b border-[#e0ddd5] hover:bg-[#faf9f6] cursor-pointer" onClick={() => setAbierta(f.id)}>

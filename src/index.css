@@ -9,14 +9,23 @@
   }
 
   body {
-    background-color: #f5f4f0;
-    color: #1a1a1a;
-    font-family: 'IBM Plex Sans', sans-serif;
+    background-color: #f7f4ee; /* crema un poco más cálida */
+    color: #33302b;
+    font-family: 'Nunito', sans-serif;
     line-height: 1.55;
+  }
+
+  h1, h2, h3 {
+    font-family: 'Poppins', 'Nunito', sans-serif;
   }
 
   * {
     box-sizing: border-box;
+  }
+
+  /* Esquinas redondeadas (más amable, menos cuadriculado) */
+  button, input, select, textarea {
+    border-radius: 12px;
   }
 
   /* Foco visible y claro (teclado / baja visión) */
@@ -28,15 +37,15 @@
 
 @layer components {
   .btn-primary {
-    @apply bg-[#1a1a1a] text-white font-semibold px-8 py-4 rounded-none
+    @apply bg-[#33302b] text-white font-semibold px-8 py-4 rounded-none
     transition-all duration-200 hover:bg-[#333] active:scale-95
-    text-lg tracking-wide cursor-pointer border-2 border-[#1a1a1a];
+    text-lg tracking-wide cursor-pointer border-2 border-[#33302b];
   }
 
   .btn-secondary {
-    @apply bg-transparent text-[#1a1a1a] font-semibold px-6 py-3 rounded-none
-    transition-all duration-200 hover:bg-[#1a1a1a] hover:text-white
-    text-base tracking-wide cursor-pointer border-2 border-[#1a1a1a];
+    @apply bg-transparent text-[#33302b] font-semibold px-6 py-3 rounded-none
+    transition-all duration-200 hover:bg-[#33302b] hover:text-white
+    text-base tracking-wide cursor-pointer border-2 border-[#33302b];
   }
 
   .btn-danger {
@@ -46,16 +55,16 @@
   }
 
   .table-header {
-    @apply bg-[#1a1a1a] text-white font-semibold text-xs tracking-wider
+    @apply bg-[#33302b] text-white font-semibold text-xs tracking-wider
     uppercase px-2.5 py-2.5 text-left font-mono;
   }
 
   .table-cell {
-    @apply px-2.5 py-2.5 text-sm border-b border-[#e0ddd5] text-[#1a1a1a];
+    @apply px-2.5 py-2.5 text-sm border-b border-[#e0ddd5] text-[#33302b];
   }
 
   .margin-input {
-    @apply w-14 text-center border-2 border-[#1a1a1a] bg-white font-mono
+    @apply w-14 text-center border-2 border-[#33302b] bg-white font-mono
     text-sm py-1 px-1.5 focus:outline-none focus:border-[#2980b9]
     transition-colors duration-200;
   }
@@ -75,11 +84,13 @@
     border-b-2 border-[#e0ddd5] pb-2 mb-4 mt-8;
   }
   .pcard {
-    @apply bg-white border border-[#e0ddd5] p-6;
+    @apply bg-white border border-[#e7e2d8] p-6 rounded-2xl;
+    box-shadow: 0 1px 3px rgba(60, 50, 30, 0.06);
   }
   .kpi {
-    @apply bg-white border border-[#e0ddd5] p-5;
-    border-left: 6px solid #1a1a1a;
+    @apply bg-white border border-[#e7e2d8] p-5 rounded-xl;
+    border-left: 6px solid #33302b;
+    box-shadow: 0 1px 3px rgba(60, 50, 30, 0.06);
   }
   .kpi .k-l { @apply text-xs uppercase tracking-wider text-[#666] font-mono; }
   .kpi .k-v { @apply text-3xl font-bold font-mono mt-1; }
@@ -90,18 +101,18 @@
   .navlink.active { @apply text-white bg-[#333] font-semibold; }
   /* Campos: altos y legibles (objetivo táctil ≥48px) */
   .input-plat {
-    @apply border-2 border-[#1a1a1a] bg-white font-mono text-base py-3 px-3.5
+    @apply border-2 border-[#33302b] bg-white font-mono text-base py-3 px-3.5
     outline-none transition-colors w-full;
     min-height: 48px;
   }
   .input-plat:focus { @apply border-[#2980b9]; }
   /* Botón secundario (contorno) — alto y claro */
   .btn-plat {
-    @apply border-2 border-[#1a1a1a] bg-white font-semibold text-base font-mono
+    @apply border-2 border-[#33302b] bg-white font-semibold text-base font-mono
     px-5 py-3 transition-colors cursor-pointer;
     min-height: 48px;
   }
-  .btn-plat:hover { @apply bg-[#1a1a1a] text-white; }
+  .btn-plat:hover { @apply bg-[#33302b] text-white; }
   /* Botón principal grande (acción primaria de cada pantalla) */
   .btn-grande {
     @apply w-full bg-[#1a6b3c] text-white font-bold text-lg font-mono
@@ -118,7 +129,7 @@
 
 @layer utilities {
   .upload-zone {
-    border: 3px dashed #1a1a1a;
+    border: 3px dashed #33302b;
     transition: all 0.2s ease;
   }
 

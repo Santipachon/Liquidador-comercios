@@ -58,7 +58,7 @@ export default function Creditos() {
                 <div className="font-mono font-semibold">{p.numero} · {p.sigla} · {provNombre(p.sigla)}</div>
                 <div className="text-sm text-[#666] font-mono mt-1">
                   Pedido: {fechaCorta(p.fecha)} · Crédito {p.pago.dias} días · Vence: <b>{fechaCorta(p.pago.vencimiento)}</b>
-                  {p.totalDinero > 0 && <> · Total: <b className="text-[#1a1a1a]">{formatCOP(p.totalDinero)}</b></>}
+                  {p.totalDinero > 0 && <> · Total: <b className="text-[#33302b]">{formatCOP(p.totalDinero)}</b></>}
                 </div>
               </div>
               <span className={`inline-block px-2.5 py-1 text-xs font-mono font-semibold border ${b.cls}`}>{b.txt}</span>
@@ -87,7 +87,7 @@ export default function Creditos() {
         <div className="pcard overflow-x-auto">
           <table className="w-full border-collapse text-sm">
             <thead><tr>{['Nº', 'Proveedor', 'Vencía', 'Pagado', 'Comprobante', ''].map(h =>
-              <th key={h} className="bg-[#1a1a1a] text-white text-left px-3 py-2 text-xs font-mono uppercase tracking-wider">{h}</th>)}</tr></thead>
+              <th key={h} className="bg-[#33302b] text-white text-left px-3 py-2 text-xs font-mono uppercase tracking-wider">{h}</th>)}</tr></thead>
             <tbody>
               {pagados.map(p => (
                 <tr key={p.id} className="border-b border-[#e0ddd5]">

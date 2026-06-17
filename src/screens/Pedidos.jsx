@@ -96,7 +96,7 @@ export default function Pedidos() {
             <table className="w-full border-collapse text-sm">
               <thead><tr>
                 {['Código', 'Producto', 'Cant.', ...(incluyePrecios ? ['V. Unit.', 'Total'] : []), ''].map(h =>
-                  <th key={h} className="bg-[#1a1a1a] text-white text-left px-2 py-2 text-xs font-mono uppercase tracking-wider">{h}</th>)}
+                  <th key={h} className="bg-[#33302b] text-white text-left px-2 py-2 text-xs font-mono uppercase tracking-wider">{h}</th>)}
               </tr></thead>
               <tbody>
                 {items.map((it, i) => (
@@ -118,7 +118,7 @@ export default function Pedidos() {
             <input className="input-plat" placeholder="🔍 Agregar producto del catálogo (código y costo automáticos)…"
               value={buscarCat} onChange={e => setBuscarCat(e.target.value)} autoComplete="off" />
             {buscarCat.trim() && (
-              <div className="absolute left-0 right-0 top-full mt-1 bg-white border-2 border-[#1a1a1a] z-20 max-h-64 overflow-y-auto shadow-xl">
+              <div className="absolute left-0 right-0 top-full mt-1 bg-white border-2 border-[#33302b] z-20 max-h-64 overflow-y-auto shadow-xl">
                 {matchesCat.length === 0 ? <p className="px-3 py-2 text-sm text-[#999] font-mono">Sin coincidencias en el catálogo</p> :
                   matchesCat.map((p, i) => (
                     <button key={i} onClick={() => agregarDelCatalogo(p)} className="block w-full text-left px-3 py-2 border-b border-[#eee] hover:bg-[#fffbe6]">
@@ -192,7 +192,7 @@ export default function Pedidos() {
         <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))' }}>
           {listaProv.map(([g, info]) => (
             <button key={g} onClick={() => abrirProveedor(g)}
-              className="text-left bg-white border-2 border-[#1a1a1a] p-4 transition-all hover:bg-[#1a1a1a] hover:-translate-y-0.5 group">
+              className="text-left bg-white border-2 border-[#33302b] p-4 transition-all hover:bg-[#33302b] hover:-translate-y-0.5 group">
               <div className="flex items-baseline justify-between">
                 <span className="font-mono font-bold text-lg">{g === '—' ? 'Sin proveedor' : g}</span>
                 <span className="font-mono text-2xl font-bold text-[#1a6b3c] group-hover:text-[#86efac]">{info.n}</span>
@@ -215,7 +215,7 @@ export default function Pedidos() {
         <div className="pcard overflow-x-auto">
           <table className="w-full border-collapse text-sm">
             <thead><tr>{['Nº', 'Proveedor', 'Fecha', 'Unid.', 'Pago', 'Estado', ''].map(h =>
-              <th key={h} className="bg-[#1a1a1a] text-white text-left px-3 py-2 text-xs font-mono uppercase tracking-wider">{h}</th>)}</tr></thead>
+              <th key={h} className="bg-[#33302b] text-white text-left px-3 py-2 text-xs font-mono uppercase tracking-wider">{h}</th>)}</tr></thead>
             <tbody>
               {pedidos.map(p => (
                 <tr key={p.id} className="border-b border-[#e0ddd5]">

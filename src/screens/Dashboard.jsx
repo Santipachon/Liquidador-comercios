@@ -4,7 +4,7 @@ import { getFacturas, getCatalogo, getPendientes, updatePendiente, sembrarEjempl
 import { formatCOP, fechaCorta, provNombre, normalizar } from '../lib/shared'
 
 const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
-const TH = h => <th key={h} className="bg-[#1a1a1a] text-white text-left px-3 py-2 text-xs font-mono uppercase tracking-wider">{h}</th>
+const TH = h => <th key={h} className="bg-[#33302b] text-white text-left px-3 py-2 text-xs font-mono uppercase tracking-wider">{h}</th>
 
 function Bar({ rows, color }) {
   const max = Math.max(...rows.map(r => r.v), 1)

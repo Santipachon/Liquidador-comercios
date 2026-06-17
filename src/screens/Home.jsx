@@ -49,7 +49,7 @@ export default function Home() {
       <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))' }}>
         {cards.map(c => (
           <button key={c.to} onClick={() => nav(c.to)}
-            className="text-left bg-white border-[3px] border-[#1a1a1a] p-7 transition-all hover:bg-[#1a1a1a] hover:-translate-y-1 group"
+            className="text-left bg-white border-[3px] border-[#33302b] p-7 transition-all hover:bg-[#33302b] hover:-translate-y-1 group"
             style={{ minHeight: 150 }}>
             <div className="text-5xl mb-3">{c.ico}</div>
             <div className="text-2xl font-bold group-hover:text-white">{c.t}</div>
