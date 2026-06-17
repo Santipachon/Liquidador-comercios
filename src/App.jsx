@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { HashRouter, Routes, Route, NavLink, Navigate, Outlet, useNavigate } from 'react-router-dom'
+import { HashRouter, Routes, Route, Navigate, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import Home from './screens/Home'
 import Pendientes from './screens/Pendientes'
 import Catalogo from './screens/Catalogo'
@@ -17,16 +17,6 @@ const USUARIOS = [
   { nombre: 'Carlos', corto: 'Carlos', rol: 'empleado', pin: '1111', inicial: 'C', color: '#2980b9' },
 ]
 
-const NAV = [
-  { to: '/', t: 'Inicio', end: true },
-  { to: '/pendientes', t: 'Pendientes' },
-  { to: '/catalogo', t: 'Catálogo', admin: true },
-  { to: '/pedidos', t: 'Pedidos', admin: true },
-  { to: '/creditos', t: 'Créditos', admin: true },
-  { to: '/liquidar', t: 'Liquidar', admin: true },
-  { to: '/dashboard', t: 'Reportes', admin: true },
-  { to: '/historial', t: 'Historial', admin: true },
-]
 
 function Login({ onLogin }) {
   const [sel, setSel] = useState(null)
@@ -71,33 +61,32 @@ function Login({ onLogin }) {
 }
 
 function Shell({ usuario, onLogout }) {
-  const esAdmin = usuario.rol === 'admin'
-  const links = NAV.filter(n => esAdmin || !n.admin)
+  const nav = useNavigate()
+  const location = useLocation()
+  const enInicio = location.pathname === '/'
   return (
     <div className="min-h-screen bg-[#f5f4f0]">
       <header className="bg-[#1a1a1a] text-white sticky top-0 z-40">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between flex-wrap gap-2">
-          <div>
-            <h1 className="text-base font-bold font-mono tracking-tight">ALMACÉN EL ACERO</h1>
-            <p className="text-[#888] text-[10px] font-mono tracking-widest">Plataforma de gestión</p>
-          </div>
-          <div className="flex items-center gap-3 font-mono text-xs">
-            <span className="bg-[#333] px-2.5 py-1">{usuario.nombre} · {usuario.rol}</span>
-            <button className="text-[#bbb] hover:text-white" onClick={onLogout}>Salir ✕</button>
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between flex-wrap gap-3">
+          <button onClick={() => nav('/')} className="text-left" title="Ir al inicio">
+            <h1 className="text-lg font-bold font-mono tracking-tight">ALMACÉN EL ACERO</h1>
+            <p className="text-[#888] text-[11px] font-mono tracking-widest">Plataforma de gestión</p>
+          </button>
+          <div className="flex items-center gap-3 font-mono text-sm">
+            {!enInicio && (
+              <button onClick={() => nav('/')}
+                className="bg-white text-[#1a1a1a] font-semibold px-4 py-2 hover:bg-[#eee]">🏠 Inicio</button>
+            )}
+            <span className="bg-[#333] px-3 py-2 hidden sm:inline">{usuario.nombre}</span>
+            <button className="text-[#ccc] hover:text-white px-2 py-2" onClick={onLogout}>Salir ✕</button>
           </div>
         </div>
-        <nav className="max-w-6xl mx-auto px-2 flex gap-1 overflow-x-auto border-t border-[#333]">
-          {links.map(n => (
-            <NavLink key={n.to} to={n.to} end={n.end}
-              className={({ isActive }) => `navlink whitespace-nowrap ${isActive ? 'active' : ''}`}>{n.t}</NavLink>
-          ))}
-        </nav>
       </header>
       <main className="max-w-6xl mx-auto px-4 py-6">
         <Outlet context={{ usuario }} />
       </main>
       <footer className="border-t border-[#e0ddd5] py-5 px-4 mt-10">
-        <p className="max-w-6xl mx-auto text-[#bbb] font-mono text-[11px]">ALMACÉN EL ACERO · Plataforma de gestión · datos guardados en este equipo (próximo paso: nube)</p>
+        <p className="max-w-6xl mx-auto text-[#999] font-mono text-xs">ALMACÉN EL ACERO · Plataforma de gestión</p>
       </footer>
     </div>
   )

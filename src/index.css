@@ -4,7 +4,7 @@
 
 @layer base {
   html {
-    font-size: 16px;
+    font-size: 17px; /* base más grande para lectura cómoda (60+) */
     -webkit-font-smoothing: antialiased;
   }
 
@@ -12,10 +12,17 @@
     background-color: #f5f4f0;
     color: #1a1a1a;
     font-family: 'IBM Plex Sans', sans-serif;
+    line-height: 1.55;
   }
 
   * {
     box-sizing: border-box;
+  }
+
+  /* Foco visible y claro (teclado / baja visión) */
+  :focus-visible {
+    outline: 3px solid #2980b9;
+    outline-offset: 2px;
   }
 }
 
@@ -62,35 +69,47 @@
     border border-[#86efac] text-[#166534] inline-block;
   }
 
-  /* ─── Plataforma ─── */
+  /* ─── Plataforma (sistema senior-first) ─── */
   .sec-title {
-    @apply font-mono text-xs uppercase tracking-widest text-[#666]
-    border-b border-[#e0ddd5] pb-1.5 mb-3 mt-7;
+    @apply font-mono text-sm uppercase tracking-wider text-[#555] font-semibold
+    border-b-2 border-[#e0ddd5] pb-2 mb-4 mt-8;
   }
   .pcard {
-    @apply bg-white border border-[#e0ddd5] p-5;
+    @apply bg-white border border-[#e0ddd5] p-6;
   }
   .kpi {
-    @apply bg-white border border-[#e0ddd5] p-4;
-    border-left: 5px solid #1a1a1a;
+    @apply bg-white border border-[#e0ddd5] p-5;
+    border-left: 6px solid #1a1a1a;
   }
-  .kpi .k-l { @apply text-[10px] uppercase tracking-widest text-[#999] font-mono; }
-  .kpi .k-v { @apply text-2xl font-bold font-mono mt-1; }
+  .kpi .k-l { @apply text-xs uppercase tracking-wider text-[#666] font-mono; }
+  .kpi .k-v { @apply text-3xl font-bold font-mono mt-1; }
   .navlink {
-    @apply px-3 py-2 font-mono text-sm text-[#bbb] no-underline transition-colors cursor-pointer;
+    @apply px-4 py-3 font-mono text-base text-[#ccc] no-underline transition-colors cursor-pointer;
   }
   .navlink:hover { @apply text-white bg-[#333]; }
-  .navlink.active { @apply text-white bg-[#333]; }
+  .navlink.active { @apply text-white bg-[#333] font-semibold; }
+  /* Campos: altos y legibles (objetivo táctil ≥48px) */
   .input-plat {
-    @apply border-2 border-[#1a1a1a] bg-white font-mono text-sm py-2 px-3
+    @apply border-2 border-[#1a1a1a] bg-white font-mono text-base py-3 px-3.5
     outline-none transition-colors w-full;
+    min-height: 48px;
   }
   .input-plat:focus { @apply border-[#2980b9]; }
+  /* Botón secundario (contorno) — alto y claro */
   .btn-plat {
-    @apply border-2 border-[#1a1a1a] bg-white font-semibold text-sm font-mono
-    px-4 py-2 transition-colors cursor-pointer;
+    @apply border-2 border-[#1a1a1a] bg-white font-semibold text-base font-mono
+    px-5 py-3 transition-colors cursor-pointer;
+    min-height: 48px;
   }
   .btn-plat:hover { @apply bg-[#1a1a1a] text-white; }
+  /* Botón principal grande (acción primaria de cada pantalla) */
+  .btn-grande {
+    @apply w-full bg-[#1a6b3c] text-white font-bold text-lg font-mono
+    px-6 py-4 transition-colors cursor-pointer flex items-center justify-center gap-2;
+    min-height: 56px;
+  }
+  .btn-grande:hover { @apply bg-[#14542f]; }
+  .btn-grande:disabled { @apply opacity-40 cursor-not-allowed; }
 }
 
 @layer utilities {
