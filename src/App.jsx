@@ -13,8 +13,8 @@ import { guardarLiquidacion } from './lib/db'
 
 // Usuarios demo (en la versión real: tabla de usuarios en Supabase con PIN propio)
 const USUARIOS = [
-  { nombre: 'Nayibe Talero', corto: 'Nayibe', rol: 'admin', pin: '1234', inicial: 'N', color: '#1a6b3c' },
-  { nombre: 'Carlos', corto: 'Carlos', rol: 'empleado', pin: '1111', inicial: 'C', color: '#2980b9' },
+  { nombre: 'Nayibe Talero', corto: 'Nayibe', rol: 'admin', pin: '5351', inicial: 'N', color: '#1a6b3c' },
+  { nombre: 'Daniel', corto: 'Daniel', rol: 'empleado', pin: '0101', inicial: 'D', color: '#2980b9' },
 ]
 
 
@@ -53,7 +53,6 @@ function Login({ onLogin }) {
             className="input-plat text-center text-2xl tracking-[0.5em]" placeholder="••••" />
           {err && <p className="text-[#c0392b] text-sm font-mono mt-2">PIN incorrecto</p>}
           <button className="btn-plat w-full mt-4 border-[#1a6b3c] text-[#1a6b3c] hover:bg-[#1a6b3c] hover:text-white" onClick={entrar}>Entrar</button>
-          <p className="text-[10px] text-[#bbb] font-mono mt-4 text-center">Demo: Nayibe = 1234 · Carlos = 1111</p>
         </>)}
       </div>
     </div>
