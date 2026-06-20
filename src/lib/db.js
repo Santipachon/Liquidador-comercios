@@ -1,15 +1,19 @@
 // ───────────────────────────────────────────────────────────────────────────
 //  Capa de datos de la plataforma.
-//  HOY: localStorage (funciona offline, sin login, en este equipo).
-//  MAÑANA: para pasar a Supabase, basta reimplementar estas funciones contra
-//  la nube manteniendo la misma firma. El resto de la app no cambia.
+//  Nube: Supabase (multi-dispositivo, fuente de verdad) — ESQUEMA NORMALIZADO:
+//    facturas + factura_items · productos + producto_hist · pedidos + pedido_items.
+//  Espejo local: localStorage (lectura instantánea + offline). Las pantallas leen
+//  la caché denormalizada (producto.hist[], factura.items[]); aquí se arma desde
+//  las tablas hijas al hidratar y se reparte en tablas al escribir.
+//  Identidad de producto: clave = NIT + '|' + código + '|' + nombre  (backend por NIT).
 // ───────────────────────────────────────────────────────────────────────────
+import { supabase } from './supabase'
 
 const KEY = 'acero_v1'
 const norm = s => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
 
 function read() { try { return JSON.parse(localStorage.getItem(KEY)) || {} } catch { return {} } }
-function write(d) { localStorage.setItem(KEY, JSON.stringify(d)) }
+function write(d) { try { localStorage.setItem(KEY, JSON.stringify(d)) } catch { /* cuota llena: ignorar */ } }
 
 const CONFIG_DEFAULT = {
   nombre: 'ALMACÉN EL ACERO', nit: '9517525-8', propietario: 'Nayibe Talero',
@@ -29,23 +33,183 @@ let cache = (() => {
 })()
 function persist() { write(cache) }
 
-// ─── Bandeja: facturas por liquidar (hoy: carga manual; mañana: Gmail las inyecta) ───
+// ─── Empuje a la nube ───
+// bg(): para una sola consulta (fire-and-forget, registra el error).
+function bg(q) {
+  if (q && typeof q.then === 'function') {
+    q.then(r => { if (r && r.error) console.error('[supabase]', r.error.message) })
+     .catch(e => console.error('[supabase]', e?.message || e))
+  }
+}
+// push(): para escrituras de varios pasos (factura→items→hist). No interrumpe la UI.
+async function push(fn) {
+  try { await fn() } catch (e) { console.error('[supabase] push:', e?.message || e) }
+}
+// agrupa filas hijas por su id de padre, para armar los arreglos al hidratar.
+function groupBy(rows, campo) {
+  const m = new Map()
+  for (const r of rows) { const k = r[campo]; if (!m.has(k)) m.set(k, []); m.get(k).push(r) }
+  return m
+}
+// Trae TODAS las filas de una tabla paginando (PostgREST devuelve máx. 1000 por consulta).
+async function fetchAll(tabla) {
+  const PAGE = 1000
+  let desde = 0, todo = []
+  for (;;) {
+    const { data, error } = await supabase.from(tabla).select('*').range(desde, desde + PAGE - 1)
+    if (error) return { data: null, error }
+    todo = todo.concat(data || [])
+    if (!data || data.length < PAGE) break
+    desde += PAGE
+  }
+  return { data: todo, error: null }
+}
+
+// ─── Identidad de producto ───
+function keyProd(nombre, codigo, nit) {
+  return (nit || '?') + '|' + (codigo || '') + '|' + norm(nombre).slice(0, 60)
+}
+
+// ─── Mapeadores caché → fila normalizada (para escribir) ───
+const productoToRow = p => ({
+  clave: p.key, nombre: p.nombre, codigo: p.codigo || null, sigla: p.sigla || null, codigo_interno: p.codigo_interno || null,
+  ultimo_costo: p.ultimo_costo ?? null, ultimo_venta: p.ultimo_venta ?? null, ultima_fecha: p.ultima_fecha || null, veces: p.veces || 0,
+  margen_recordado: p.margen_recordado ?? null, redondeo_recordado: p.redondeo_recordado || null, etiquetas_regla: p.etiquetas_regla || null,
+  conteo_fecha: p.conteo?.fecha || null, conteo_cantidad: p.conteo?.cantidad ?? null, updated_at: new Date().toISOString(),
+})
+const facturaHeaderRow = f => ({
+  numero: f.numero, sigla: f.sigla || null, nit: f.nit || null, proveedor_nombre: f.proveedorNombre || null, fecha: f.fecha,
+  num_productos: f.num_productos, unidades: f.unidades, etiquetas: f.etiquetas,
+  costo_sin_iva: f.costoSinIva, iva: f.iva, costo_con_iva: f.costoConIva, venta: f.venta, ganancia: f.ganancia,
+})
+const pedidoHeaderRow = p => ({
+  id: p.id, numero: p.numero, sigla: p.sigla || null, proveedor_nombre: p.proveedorNombre || null, nit: p.nit || null,
+  fecha: p.fecha, lugar: p.lugar || null, incluye_precios: !!p.incluyePrecios, observaciones: p.observaciones || null,
+  pago_tipo: p.pago?.tipo || 'contado', pago_dias: p.pago?.dias ?? null, pago_vencimiento: p.pago?.vencimiento || null,
+  total_unidades: p.totalUnidades ?? null, total_dinero: p.totalDinero ?? null,
+  estado_pago: p.estadoPago || 'pendiente', fecha_pago: p.fechaPago || null,
+  comprobante_nombre: p.comprobantePago?.nombre || null, comprobante_url: p.comprobantePago?.dataUrl || null,
+})
+const pedidoItemRows = p => (p.items || []).map(it => ({
+  pedido_id: p.id, producto_id: it.producto_id || null, codigo: it.codigo || null, nombre: it.nombre || null,
+  cantidad: it.cantidad ?? null, precio: it.precio ?? null,
+}))
+const pendienteRow = p => ({
+  id: p.id, prod: p.prod, codigo: p.codigo || null, cant: p.cant ?? null, cliente: p.cliente || null, tel: p.tel || null,
+  sigla: p.sigla || null, estado: p.estado || 'pendiente', pedido_id: p.pedido_id || null, creado: p.creado,
+})
+const bandejaRow = b => ({
+  id: b.id, sigla: b.sigla || null, proveedor_nombre: b.proveedorNombre || null, nit: b.nit || null, numero: b.numero || null,
+  fecha_llegada: b.fechaLlegada || new Date().toISOString(), nombre_archivo: b.nombreArchivo || null, n_productos: b.nProductos ?? null, xml_text: b.xmlText || null,
+})
+const configRow = () => ({
+  id: 1, nombre: cache.config.nombre, nit: cache.config.nit, propietario: cache.config.propietario,
+  direccion: cache.config.direccion || null, ciudad: cache.config.ciudad || null, telefono: cache.config.telefono || null,
+  pedido_seq: cache.pedidoSeq || 0,
+})
+
+// ─── Hidratar desde la nube (tras el login) ───
+let hidratado = false
+export function estaHidratado() { return hidratado }
+export async function inicializar() {
+  try {
+    const [prod, hist, ventas, conteos, fact, fitems, pend, ped, pitems, band, cfg] = await Promise.all([
+      fetchAll('productos'),
+      fetchAll('producto_hist'),
+      fetchAll('producto_ventas'),
+      fetchAll('conteos'),
+      fetchAll('facturas'),
+      fetchAll('factura_items'),
+      fetchAll('pendientes'),
+      fetchAll('pedidos'),
+      fetchAll('pedido_items'),
+      fetchAll('bandeja'),
+      supabase.from('config').select('*').eq('id', 1).maybeSingle(),
+    ])
+    const err = prod.error || hist.error || ventas.error || conteos.error || fact.error || fitems.error || pend.error || ped.error || pitems.error || band.error || cfg.error
+    if (err) { console.error('[hidratar]', err.message); return false }
+
+    const histByProd = groupBy(hist.data || [], 'producto_id')
+    const ventasByProd = groupBy(ventas.data || [], 'producto_id')
+    const itemsByFact = groupBy(fitems.data || [], 'factura_id')
+    const itemsByPed = groupBy(pitems.data || [], 'pedido_id')
+
+    cache.catalogo = (prod.data || []).map(r => ({
+      key: r.clave, nombre: r.nombre, codigo: r.codigo, sigla: r.sigla, codigo_interno: r.codigo_interno,
+      ultimo_costo: r.ultimo_costo, ultimo_venta: r.ultimo_venta, ultima_fecha: r.ultima_fecha, veces: r.veces || 0,
+      margen_recordado: r.margen_recordado, redondeo_recordado: r.redondeo_recordado, etiquetas_regla: r.etiquetas_regla,
+      conteo: r.conteo_fecha ? { fecha: r.conteo_fecha, cantidad: r.conteo_cantidad } : undefined,
+      hist: (histByProd.get(r.id) || [])
+        .map(h => ({ fecha: h.fecha, costo: h.costo, venta: h.venta, cantidad: h.cantidad, margen: h.margen, redondeo: h.redondeo }))
+        .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || '')),
+      ventas: (ventasByProd.get(r.id) || []).map(v => ({ fecha: v.fecha, cantidad: v.cantidad, precio: v.precio, fuente: v.fuente })),
+    }))
+
+    cache.facturas = (fact.data || []).map(r => ({
+      id: 'F-' + (r.numero || r.id), numero: r.numero, sigla: r.sigla, nit: r.nit, proveedorNombre: r.proveedor_nombre, fecha: r.fecha,
+      num_productos: r.num_productos, unidades: r.unidades, etiquetas: r.etiquetas,
+      costoSinIva: r.costo_sin_iva, iva: r.iva, costoConIva: r.costo_con_iva, venta: r.venta, ganancia: r.ganancia,
+      items: (itemsByFact.get(r.id) || []).map(it => ({
+        nombre: it.nombre, codigo: it.codigo, cantidad: it.cantidad, precio_unitario: it.precio_unitario, iva_percent: it.iva_percent,
+        margen: it.margen, redondeo: it.redondeo, precio_venta: it.precio_venta, codigo_interno: it.codigo_interno, etiquetas: it.etiquetas,
+      })),
+    }))
+
+    cache.pendientes = (pend.data || []).sort((a, b) => (b.creado || '').localeCompare(a.creado || '')).map(r => ({
+      id: r.id, prod: r.prod, codigo: r.codigo, cant: r.cant, cliente: r.cliente, tel: r.tel, sigla: r.sigla, estado: r.estado, creado: r.creado, pedido_id: r.pedido_id,
+    }))
+
+    cache.pedidos = (ped.data || []).map(r => ({
+      id: r.id, numero: r.numero, sigla: r.sigla, proveedorNombre: r.proveedor_nombre, nit: r.nit, fecha: r.fecha, lugar: r.lugar,
+      incluyePrecios: r.incluye_precios, observaciones: r.observaciones,
+      pago: r.pago_tipo === 'credito' ? { tipo: 'credito', dias: r.pago_dias, vencimiento: r.pago_vencimiento } : { tipo: r.pago_tipo || 'contado' },
+      totalUnidades: r.total_unidades, totalDinero: r.total_dinero, estadoPago: r.estado_pago, fechaPago: r.fecha_pago,
+      comprobantePago: r.comprobante_nombre ? { nombre: r.comprobante_nombre, dataUrl: r.comprobante_url } : undefined,
+      items: (itemsByPed.get(r.id) || []).map(it => ({ codigo: it.codigo, nombre: it.nombre, cantidad: it.cantidad, precio: it.precio, producto_id: it.producto_id })),
+    }))
+
+    cache.bandeja = (band.data || []).map(r => ({
+      id: r.id, sigla: r.sigla, proveedorNombre: r.proveedor_nombre, nit: r.nit, numero: r.numero,
+      fechaLlegada: r.fecha_llegada, nombreArchivo: r.nombre_archivo, nProductos: r.n_productos, xmlText: r.xml_text,
+    }))
+
+    if (cfg.data) {
+      cache.config = {
+        nombre: cfg.data.nombre, nit: cfg.data.nit, propietario: cfg.data.propietario,
+        direccion: cfg.data.direccion || '', ciudad: cfg.data.ciudad || '', telefono: cfg.data.telefono || '',
+      }
+      cache.pedidoSeq = cfg.data.pedido_seq || 0
+    }
+    hidratado = true
+    persist()
+    return true
+  } catch (e) { console.error('[hidratar]', e?.message || e); return false }
+}
+
+// ─── Bandeja: facturas por liquidar ───
 export function getBandeja() {
   return [...cache.bandeja].sort((a, b) => (b.fechaLlegada || '').localeCompare(a.fechaLlegada || ''))
 }
 export function addABandeja(item) {
-  // Evita duplicar la misma factura (por número, si lo trae)
-  if (item.numero) cache.bandeja = cache.bandeja.filter(x => x.numero !== item.numero)
-  cache.bandeja.unshift({ id: 'b' + Date.now() + Math.floor(Math.random() * 1000), ...item })
-  persist()
+  if (item.numero) {
+    cache.bandeja.filter(x => x.numero === item.numero).forEach(x => bg(supabase.from('bandeja').delete().eq('id', x.id)))
+    cache.bandeja = cache.bandeja.filter(x => x.numero !== item.numero)
+  }
+  const nuevo = { id: 'b' + Date.now() + Math.floor(Math.random() * 1000), fechaLlegada: new Date().toISOString(), ...item }
+  cache.bandeja.unshift(nuevo)
+  persist(); bg(supabase.from('bandeja').upsert(bandejaRow(nuevo), { onConflict: 'id' }))
 }
 export function quitarDeBandeja(id) {
-  cache.bandeja = cache.bandeja.filter(x => x.id !== id); persist()
+  cache.bandeja = cache.bandeja.filter(x => x.id !== id)
+  persist(); bg(supabase.from('bandeja').delete().eq('id', id))
 }
 
-// ─── Configuración del almacén (encabezado de comprobantes) ───
+// ─── Configuración del almacén ───
 export function getConfig() { return { ...cache.config } }
-export function setConfig(patch) { cache.config = { ...cache.config, ...patch }; persist() }
+export function setConfig(patch) {
+  cache.config = { ...cache.config, ...patch }
+  persist(); bg(supabase.from('config').upsert(configRow(), { onConflict: 'id' }))
+}
 
 // ─── Pedidos / comprobantes a proveedores ───
 export function getPedidos() { return [...cache.pedidos].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')) }
@@ -56,12 +220,30 @@ export function addPedido(p) {
   const pedido = { id: 'ped' + Date.now(), numero: 'PED-' + String(cache.pedidoSeq).padStart(4, '0'), creado: new Date().toISOString(), estadoPago: 'pendiente', ...p }
   cache.pedidos.unshift(pedido)
   persist()
+  push(async () => {
+    const { error } = await supabase.from('pedidos').upsert(pedidoHeaderRow(pedido), { onConflict: 'id' })
+    if (error) throw error
+    await supabase.from('pedido_items').delete().eq('pedido_id', pedido.id)
+    const rows = pedidoItemRows(pedido)
+    if (rows.length) { const { error: e2 } = await supabase.from('pedido_items').insert(rows); if (e2) throw e2 }
+  })
+  bg(supabase.from('config').upsert(configRow(), { onConflict: 'id' }))
   return pedido
 }
 export function updatePedido(id, patch) {
-  const p = cache.pedidos.find(x => x.id === id); if (p) Object.assign(p, patch); persist()
+  const p = cache.pedidos.find(x => x.id === id)
+  if (!p) return
+  Object.assign(p, patch); persist()
+  push(async () => {
+    const { error } = await supabase.from('pedidos').upsert(pedidoHeaderRow(p), { onConflict: 'id' })
+    if (error) throw error
+    if (patch.items) {
+      await supabase.from('pedido_items').delete().eq('pedido_id', p.id)
+      const rows = pedidoItemRows(p)
+      if (rows.length) { const { error: e2 } = await supabase.from('pedido_items').insert(rows); if (e2) throw e2 }
+    }
+  })
 }
-// Créditos próximos a vencer o vencidos (no pagados, dentro de `dias` días o ya vencidos)
 export function creditosPorVencer(dias = 3) {
   const hoy = Date.now()
   return cache.pedidos.filter(p => p.pago?.tipo === 'credito' && p.estadoPago !== 'pagado' && p.pago?.vencimiento)
@@ -71,21 +253,17 @@ export function creditosPorVencer(dias = 3) {
 }
 
 // ─── Facturas (historial) ───
-export function getFacturas() {
-  return [...cache.facturas].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''))
-}
+export function getFacturas() { return [...cache.facturas].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')) }
 export function getFactura(id) { return cache.facturas.find(f => f.id === id) }
 
 export function guardarLiquidacion(p) {
-  // p: {numero, sigla, nit, proveedorNombre, fecha, items:[{nombre,codigo,cantidad,
-  //     precio_unitario,iva_percent,margen,redondeo,etiquetas,precio_venta,codigo_interno}]}
   const id = p.numero ? 'F-' + p.numero : 'F-' + Date.now()
   let costoSinIva = 0, iva = 0, venta = 0, unidades = 0, etiquetas = 0
   p.items.forEach(it => {
     const sub = it.precio_unitario * it.cantidad
     costoSinIva += sub
     iva += sub * ((it.iva_percent || 0) / 100)
-    venta += it.precio_venta * it.cantidad
+    venta += (it.precio_venta || 0) * it.cantidad
     unidades += it.cantidad
     etiquetas += it.etiquetas || 0
   })
@@ -99,26 +277,15 @@ export function guardarLiquidacion(p) {
   }
   const idx = cache.facturas.findIndex(f => f.id === id)
   if (idx >= 0) cache.facturas[idx] = factura; else cache.facturas.push(factura)
-  p.items.forEach(it => upsertProducto(it, p.sigla, factura.fecha))
+  p.items.forEach(it => upsertProductoLocal(it, p.sigla, p.nit, factura.fecha))
   persist()
+  push(() => pushLiquidacion(factura, p))
   return factura
 }
 
-// ─── Catálogo maestro (crece con cada factura) ───
-export function getCatalogo() {
-  return [...cache.catalogo].sort((a, b) => norm(a.nombre).localeCompare(norm(b.nombre)))
-}
-// Busca un producto del catálogo por nombre (y opcionalmente sigla) para auto-rellenar
-// su código, costo, etc. Primero intenta coincidencia exacta por clave (sigla+nombre),
-// luego por nombre normalizado en cualquier proveedor.
-export function getProductoPorNombre(nombre, sigla) {
-  const n = norm(nombre)
-  return cache.catalogo.find(p => p.key === keyProd(nombre, sigla))
-    || cache.catalogo.find(p => norm(p.nombre) === n) || null
-}
-function keyProd(nombre, sigla) { return (sigla || '?') + '|' + norm(nombre).slice(0, 60) }
-function upsertProducto(it, sigla, fecha) {
-  const k = keyProd(it.nombre, sigla)
+// Catálogo en memoria (denormalizado) — clave NIT+código+nombre.
+function upsertProductoLocal(it, sigla, nit, fecha) {
+  const k = keyProd(it.nombre, it.codigo, nit)
   let prod = cache.catalogo.find(x => x.key === k)
   if (!prod) { prod = { key: k, nombre: it.nombre, sigla: sigla || '?', veces: 0, hist: [] }; cache.catalogo.push(prod) }
   prod.codigo = it.codigo || prod.codigo
@@ -126,51 +293,86 @@ function upsertProducto(it, sigla, fecha) {
   prod.ultimo_venta = it.precio_venta
   prod.codigo_interno = it.codigo_interno
   prod.ultima_fecha = fecha
-  prod.veces += 1
-  prod.hist.push({
-    fecha, costo: it.precio_unitario, venta: it.precio_venta,
-    cantidad: it.cantidad, margen: it.margen, redondeo: it.redondeo,
-  })
-  if (prod.hist.length > 24) prod.hist = prod.hist.slice(-24)
+  prod.veces = (prod.veces || 0) + 1
+  prod.hist = prod.hist || []
+  prod.hist.push({ fecha, costo: it.precio_unitario, venta: it.precio_venta, cantidad: it.cantidad, margen: it.margen, redondeo: it.redondeo })
+  return prod
 }
 
-// ─── Pendientes (lo que pide la gente) ───
+// Escritura normalizada a la nube: factura → factura_items + productos → producto_hist.
+// Idempotente por número de factura (re-guardar reemplaza los renglones/historial de esa factura).
+async function pushLiquidacion(factura, p) {
+  const { data: frow, error: fe } = await supabase
+    .from('facturas').upsert(facturaHeaderRow(factura), { onConflict: 'numero' }).select('id').single()
+  if (fe) throw fe
+  const fid = frow.id
+  // limpiar lo previo de ESTA factura (evita duplicar al re-guardar)
+  const del1 = await supabase.from('factura_items').delete().eq('factura_id', fid); if (del1.error) throw del1.error
+  const del2 = await supabase.from('producto_hist').delete().eq('factura_id', fid); if (del2.error) throw del2.error
+
+  const itemRows = [], histRows = []
+  for (const it of p.items) {
+    const clave = keyProd(it.nombre, it.codigo, p.nit)
+    const cacheProd = cache.catalogo.find(x => x.key === clave) || { key: clave, nombre: it.nombre, codigo: it.codigo, sigla: p.sigla }
+    const { data: prow, error: pe } = await supabase
+      .from('productos').upsert(productoToRow(cacheProd), { onConflict: 'clave' }).select('id').single()
+    if (pe) throw pe
+    const pid = prow.id
+    itemRows.push({
+      factura_id: fid, producto_id: pid, nombre: it.nombre, codigo: it.codigo || null, cantidad: it.cantidad,
+      precio_unitario: it.precio_unitario, iva_percent: it.iva_percent ?? null, margen: it.margen ?? null,
+      redondeo: it.redondeo || null, precio_venta: it.precio_venta ?? null, codigo_interno: it.codigo_interno || null, etiquetas: it.etiquetas ?? null,
+    })
+    histRows.push({
+      producto_id: pid, factura_id: fid, fecha: factura.fecha, costo: it.precio_unitario,
+      venta: it.precio_venta ?? null, cantidad: it.cantidad, margen: it.margen ?? null, redondeo: it.redondeo || null,
+    })
+  }
+  if (itemRows.length) { const { error } = await supabase.from('factura_items').insert(itemRows); if (error) throw error }
+  if (histRows.length) { const { error } = await supabase.from('producto_hist').insert(histRows); if (error) throw error }
+}
+
+// ─── Catálogo maestro ───
+export function getCatalogo() { return [...cache.catalogo].sort((a, b) => norm(a.nombre).localeCompare(norm(b.nombre))) }
+export function getProductoPorNombre(nombre, sigla) {
+  const n = norm(nombre)
+  return cache.catalogo.find(p => norm(p.nombre) === n && (!sigla || p.sigla === sigla))
+    || cache.catalogo.find(p => norm(p.nombre) === n) || null
+}
+
+// ─── Pendientes ───
 export function getPendientes() { return [...cache.pendientes] }
 export function addPendiente(p) {
-  cache.pendientes.unshift({ id: 'p' + Date.now() + Math.floor(Math.random() * 1000), estado: 'pendiente', creado: new Date().toISOString(), ...p })
-  persist()
+  const nuevo = { id: 'p' + Date.now() + Math.floor(Math.random() * 1000), estado: 'pendiente', creado: new Date().toISOString(), ...p }
+  cache.pendientes.unshift(nuevo)
+  persist(); bg(supabase.from('pendientes').upsert(pendienteRow(nuevo), { onConflict: 'id' }))
 }
 export function updatePendiente(id, patch) {
-  const p = cache.pendientes.find(x => x.id === id); if (p) Object.assign(p, patch); persist()
+  const p = cache.pendientes.find(x => x.id === id)
+  if (p) { Object.assign(p, patch); persist(); bg(supabase.from('pendientes').upsert(pendienteRow(p), { onConflict: 'id' })) }
 }
 export function deletePendiente(id) {
-  cache.pendientes = cache.pendientes.filter(x => x.id !== id); persist()
+  cache.pendientes = cache.pendientes.filter(x => x.id !== id)
+  persist(); bg(supabase.from('pendientes').delete().eq('id', id))
 }
 
 // ─── Utilidades ───
 export function hayDatos() { return cache.facturas.length > 0 || cache.pendientes.length > 0 }
-export function borrarTodo() { cache = { facturas: [], catalogo: [], pendientes: [] }; persist() }
-
-export function sembrarEjemplos() {
-  if (cache.facturas.length) return
-  const hoy = new Date()
-  const iso = d => new Date(hoy.getTime() - d * 86400000).toISOString()
-  guardarLiquidacion({
-    numero: 'TGE121432', sigla: 'TG', nit: '860403249', proveedorNombre: 'TECNIGRAPAS LTDA', fecha: iso(2),
-    items: [
-      { nombre: 'Válvula de retención 1177 booster 3/8"', codigo: '1177SAMA', cantidad: 3, precio_unitario: 11741, iva_percent: 19, margen: 30, redondeo: 'auto', etiquetas: 3, precio_venta: 16000, codigo_interno: 'RLSSS' },
-      { nombre: 'Tornillo hexagonal G5 5/8 x 3-1/2"', codigo: 'TH58', cantidad: 10, precio_unitario: 1389, iva_percent: 19, margen: 30, redondeo: 'auto', etiquetas: 1, precio_venta: 1900, codigo_interno: 'RASS' },
-      { nombre: 'Grasera recta 6mm', codigo: 'GR01', cantidad: 6, precio_unitario: 900, iva_percent: 19, margen: 30, redondeo: 'auto', etiquetas: 1, precio_venta: 1200, codigo_interno: 'RESS' },
-    ],
-  })
-  guardarLiquidacion({
-    numero: 'RD-08840', sigla: 'RD', nit: '860015737', proveedorNombre: 'RODACOL', fecha: iso(0),
-    items: [
-      { nombre: 'Rodamiento 6204 2RS', codigo: '6204', cantidad: 4, precio_unitario: 8200, iva_percent: 19, margen: 30, redondeo: 'auto', etiquetas: 4, precio_venta: 10700, codigo_interno: 'RSISS' },
-      { nombre: 'Rodamiento 6301 ZZ', codigo: '6301', cantidad: 4, precio_unitario: 6800, iva_percent: 19, margen: 30, redondeo: 'auto', etiquetas: 4, precio_venta: 8900, codigo_interno: 'CASS' },
-    ],
-  })
-  addPendiente({ prod: 'Rodamiento 6204 2RS', cant: 1, cliente: 'Sra. Elena', tel: '315 222 1111', sigla: 'RD', estado: 'llego' })
-  addPendiente({ prod: 'Cruceta cardán Mitsubishi Montero 88/94', cant: 1, cliente: 'Taller La 30', tel: '320 444 9876', sigla: 'TG' })
-  addPendiente({ prod: 'Disco de corte 4-1/2"', cant: 5, cliente: 'Don Jorge', tel: '310 555 1234', sigla: 'INT' })
+export async function borrarTodo() {
+  cache.facturas = []; cache.catalogo = []; cache.pendientes = []; cache.pedidos = []; cache.bandeja = []
+  persist()
+  await Promise.all([
+    supabase.from('factura_items').delete().gte('id', 0),
+    supabase.from('producto_hist').delete().gte('id', 0),
+    supabase.from('producto_ventas').delete().gte('id', 0),
+    supabase.from('conteos').delete().gte('id', 0),
+    supabase.from('pedido_items').delete().not('id', 'is', null),
+  ])
+  await Promise.all([
+    supabase.from('facturas').delete().gte('id', 0),
+    supabase.from('productos').delete().gte('id', 0),
+    supabase.from('pendientes').delete().not('id', 'is', null),
+    supabase.from('pedidos').delete().not('id', 'is', null),
+    supabase.from('bandeja').delete().not('id', 'is', null),
+  ])
 }

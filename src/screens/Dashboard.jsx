@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getFacturas, getCatalogo, getPendientes, updatePendiente, sembrarEjemplos } from '../lib/db'
+import { getFacturas, getCatalogo, getPendientes, updatePendiente } from '../lib/db'
 import { formatCOP, fechaCorta, provNombre, normalizar } from '../lib/shared'
 
 const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
@@ -39,7 +39,6 @@ export default function Dashboard() {
         <p className="text-[#666]">Todavía no hay facturas liquidadas. Los reportes se llenan solos a medida que usa la plataforma.</p>
         <div className="flex gap-3 justify-center flex-wrap">
           <button className="btn-plat border-[#1a6b3c] text-[#1a6b3c] hover:bg-[#1a6b3c] hover:text-white" onClick={() => nav('/liquidar')}>Liquidar una factura →</button>
-          <button className="btn-plat border-[#8e44ad] text-[#8e44ad] hover:bg-[#8e44ad] hover:text-white" onClick={() => { sembrarEjemplos(); refresh() }}>Cargar datos de ejemplo</button>
         </div>
       </div>
     </div>

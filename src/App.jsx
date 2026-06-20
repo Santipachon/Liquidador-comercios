@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { HashRouter, Routes, Route, Navigate, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import Home from './screens/Home'
 import Pendientes from './screens/Pendientes'
@@ -9,23 +9,34 @@ import Creditos from './screens/Creditos'
 import Dashboard from './screens/Dashboard'
 import Historial from './screens/Historial'
 import Liquidador from './screens/Liquidador'
-import { guardarLiquidacion } from './lib/db'
+import { guardarLiquidacion, inicializar } from './lib/db'
+import { supabase } from './lib/supabase'
 
-// Usuarios demo (en la versión real: tabla de usuarios en Supabase con PIN propio)
+// Usuarios: cuenta real de Supabase (email sintético) con el PIN como contraseña.
+// El email no se muestra; en pantalla solo se elige el nombre y se escribe el PIN.
 const USUARIOS = [
-  { nombre: 'Nayibe Talero', corto: 'Nayibe', rol: 'admin', pin: '5351', inicial: 'N', color: '#1a6b3c' },
-  { nombre: 'Daniel', corto: 'Daniel', rol: 'empleado', pin: '0101', inicial: 'D', color: '#2980b9' },
+  { nombre: 'Nayibe Talero', corto: 'Nayibe', rol: 'admin', email: 'nayibe@elacero.app', inicial: 'N', color: '#1a6b3c' },
+  { nombre: 'Daniel', corto: 'Daniel', rol: 'empleado', email: 'daniel@elacero.app', inicial: 'D', color: '#2980b9' },
 ]
+const usuarioDeEmail = email => {
+  const u = USUARIOS.find(x => x.email === email)
+  return u ? { nombre: u.corto, rol: u.rol } : { nombre: email, rol: 'empleado' }
+}
 
 
-function Login({ onLogin }) {
+function Login() {
   const [sel, setSel] = useState(null)
   const [pin, setPin] = useState('')
   const [err, setErr] = useState(false)
+  const [cargando, setCargando] = useState(false)
 
-  function entrar() {
-    if (pin === sel.pin) onLogin({ nombre: sel.corto, rol: sel.rol })
-    else { setErr(true); setPin('') }
+  async function entrar() {
+    if (cargando) return
+    setCargando(true); setErr(false)
+    const { error } = await supabase.auth.signInWithPassword({ email: sel.email, password: pin })
+    setCargando(false)
+    if (error) { setErr(true); setPin('') }
+    // Éxito: el listener de sesión en App entra y carga los datos.
   }
 
   return (
@@ -52,7 +63,7 @@ function Login({ onLogin }) {
             onKeyDown={e => e.key === 'Enter' && entrar()}
             className="input-plat text-center text-2xl tracking-[0.5em]" placeholder="••••" />
           {err && <p className="text-[#c0392b] text-sm font-mono mt-2">PIN incorrecto</p>}
-          <button className="btn-plat w-full mt-4 border-[#1a6b3c] text-[#1a6b3c] hover:bg-[#1a6b3c] hover:text-white" onClick={entrar}>Entrar</button>
+          <button disabled={cargando || pin.length < 4} className="btn-plat w-full mt-4 border-[#1a6b3c] text-[#1a6b3c] hover:bg-[#1a6b3c] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed" onClick={entrar}>{cargando ? 'Entrando…' : 'Entrar'}</button>
         </>)}
       </div>
     </div>
@@ -110,13 +121,33 @@ function RequireAdmin({ usuario, children }) {
 }
 
 export default function App() {
-  const [usuario, setUsuario] = useState(() => {
-    try { return JSON.parse(sessionStorage.getItem('acero_user')) } catch { return null }
-  })
-  function login(u) { sessionStorage.setItem('acero_user', JSON.stringify(u)); setUsuario(u) }
-  function logout() { sessionStorage.removeItem('acero_user'); setUsuario(null) }
+  const [estado, setEstado] = useState('cargando') // 'cargando' | 'login' | 'listo'
+  const [usuario, setUsuario] = useState(null)
 
-  if (!usuario) return <Login onLogin={login} />
+  useEffect(() => {
+    let activo = true
+    async function aplicar(session) {
+      if (!activo) return
+      if (!session) { setUsuario(null); setEstado('login'); return }
+      setUsuario(usuarioDeEmail(session.user.email))
+      setEstado('cargando')
+      await inicializar()
+      if (activo) setEstado('listo')
+    }
+    supabase.auth.getSession().then(({ data }) => aplicar(data.session))
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => aplicar(session))
+    return () => { activo = false; sub?.subscription?.unsubscribe() }
+  }, [])
+
+  function logout() { supabase.auth.signOut() }
+
+  if (estado === 'login') return <Login />
+  if (estado === 'cargando' || !usuario) return (
+    <div className="min-h-screen bg-[#f7f4ee] flex flex-col items-center justify-center gap-3">
+      <div className="w-10 h-10 border-4 border-[#e0ddd5] border-t-[#1a6b3c] rounded-full animate-spin" />
+      <p className="text-[#666] font-mono text-sm">Cargando…</p>
+    </div>
+  )
 
   const admin = (el) => <RequireAdmin usuario={usuario}>{el}</RequireAdmin>
 

@@ -15,9 +15,9 @@ const PROVEEDORES = [
   { nombre: 'DAGO', sigla: 'DG', nit: '901626462-5' },
   { nombre: 'SANTOS HIGUERA', sigla: 'SH', nit: '7213967-7' },
   { nombre: 'RODACOL', sigla: 'RD', nit: '860015737-5' },
-  { nombre: 'INTERTRAM', sigla: 'INT', nit: '860516860-3' },
+  { nombre: 'INTERNACIONAL DE RODAMIENTOS', sigla: 'IRT', nit: '860516860-3' },
   { nombre: 'IMPORTACIONES INTERTRAM', sigla: 'INT', nit: '830126983-8' },
-  { nombre: 'GRUPO COLOMBIANO FERRETERO SAS', sigla: 'COLF', nit: '900396456-8' },
+  { nombre: 'GRUPO COLOMBIANO FERRETERO SAS', sigla: 'COLF', nit: '900811868' },
   { nombre: 'LUBRIECONOMICOS', sigla: 'LECO', nit: '901358696-1' },
   { nombre: 'MULTIFILTROS MOTORLUB', sigla: 'MULTIF', nit: '804004105-1' },
   { nombre: 'MOTOR KOTE SONIA GARCIA', sigla: 'MOTORK', nit: '23350702' },
@@ -108,18 +108,17 @@ function parsearFacturaDIAN(xmlText) {
     }
   }
   const lineas = []
-  let re = /<cac:InvoiceLine>([\s\S]*?)<\/cac:InvoiceLine>/g
+  let re = /<cac:InvoiceLine[^>]*>([\s\S]*?)<\/cac:InvoiceLine>/g
   let m
   while ((m = re.exec(xmlFactura)) !== null) lineas.push(m[1])
   if (lineas.length === 0) {
-    re = /<InvoiceLine>([\s\S]*?)<\/InvoiceLine>/g
+    re = /<InvoiceLine[^>]*>([\s\S]*?)<\/InvoiceLine>/g
     while ((m = re.exec(xmlFactura)) !== null) lineas.push(m[1])
   }
   if (lineas.length === 0) return []
   return lineas.map((linea, idx) => {
     const nombre = getTag(linea, 'cbc:Description') || getTag(linea, 'Description') || `Producto ${idx + 1}`
-    const codigoMatch = linea.match(/<cac:SellersItemIdentification>[\s\S]*?<cbc:ID[^>]*>(.*?)<\/cbc:ID>/i)
-    const codigo = codigoMatch ? codigoMatch[1].trim() : `COD${String(idx + 1).padStart(3, '0')}`
+    const codigo = codigoDeItem(linea) || `COD${String(idx + 1).padStart(3, '0')}`
     const cantidad = parseFloat(getTag(linea, 'cbc:InvoicedQuantity') || '1') || 1
     const precio_unitario = parseFloat(getTag(linea, 'cbc:PriceAmount') || '0') || 0
     const subtotal = parseFloat(getTag(linea, 'cbc:LineExtensionAmount') || '0') || (precio_unitario * cantidad)
@@ -156,6 +155,18 @@ function getTag(xml, tag) {
   const re = new RegExp(`<${tag}[^>]*>([^<]+)<\/${tag}>`, 'i')
   const m = xml.match(re)
   return m ? m[1].trim() : ''
+}
+
+// Código del producto en una InvoiceLine: prioridad Sellers → Standard → Buyers
+// (el primero no vacío). Varios proveedores dejan Sellers vacío y el código real
+// va en StandardItemIdentification. Se acota a cada bloque para no capturar IDs ajenos.
+function codigoDeItem(linea) {
+  for (const wrap of ['SellersItemIdentification', 'StandardItemIdentification', 'BuyersItemIdentification']) {
+    const bloque = (linea.match(new RegExp(`<cac:${wrap}>([\\s\\S]*?)<\\/cac:${wrap}>`, 'i')) || [])[1] || ''
+    const cod = getTag(bloque, 'cbc:ID').trim()
+    if (cod && !/^0+$/.test(cod)) return cod.substring(0, 30)
+  }
+  return ''
 }
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
