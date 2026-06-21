@@ -6,6 +6,22 @@ import { formatCOP, fechaCorta, provNombre, normalizar } from '../lib/shared'
 const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
 const TH = h => <th key={h} className="bg-[#33302b] text-white text-left px-3 py-2 text-xs font-mono uppercase tracking-wider">{h}</th>
 
+// El mayor salto de precio entre compras consecutivas, dentro de la ventana elegida.
+// periodo: 'todo' (histórico) | 'anio' (cambios de este año) | 'ult2' (solo las 2 últimas compras)
+function mejorSalto(h, periodo) {
+  const yNow = new Date().getFullYear()
+  const desde = periodo === 'ult2' ? Math.max(1, h.length - 1) : 1
+  let best = null
+  for (let i = desde; i < h.length; i++) {
+    const ant = h[i - 1].costo, act = h[i].costo
+    if (!ant) continue
+    if (periodo === 'anio' && new Date(h[i].fecha).getFullYear() !== yNow) continue
+    const dif = ((act - ant) / ant) * 100
+    if (!best || Math.abs(dif) > Math.abs(best.dif)) best = { ant, act, dif }
+  }
+  return best
+}
+
 function Bar({ rows, color }) {
   const max = Math.max(...rows.map(r => r.v), 1)
   return (
@@ -28,6 +44,8 @@ export default function Dashboard() {
   const [, force] = useState(0)
   const refresh = () => force(n => n + 1)
   const [verTodo, setVerTodo] = useState(false)   // lista de variación de precios: colapsada / expandida
+  const [filtroDir, setFiltroDir] = useState('todas')       // todas | sube | baja
+  const [filtroPeriodo, setFiltroPeriodo] = useState('todo') // todo | anio | ult2
 
   const facturas = getFacturas()
   const catalogo = getCatalogo()
@@ -56,20 +74,15 @@ export default function Dashboard() {
   pendientes.forEach(p => { const k = normalizar(p.prod); (demanda[k] = demanda[k] || { nombre: p.prod, n: 0, und: 0 }); demanda[k].n++; demanda[k].und += p.cant || 0 })
   const masPedido = Object.values(demanda).sort((a, b) => b.n - a.n).slice(0, 8)
 
-  // Variación de precios — el MAYOR salto entre compras consecutivas de todo el historial
-  // (detecta errores aunque no sean la compra más reciente). Ordenado de más a menos fluctuante.
+  // Variación de precios — el mayor salto entre compras consecutivas, según dirección y periodo.
   const alertas = catalogo.filter(p => p.hist && p.hist.length >= 2).map(p => {
-    const h = p.hist
-    let best = null
-    for (let i = 1; i < h.length; i++) {
-      const ant = h[i - 1].costo, act = h[i].costo
-      if (!ant) continue
-      const dif = ((act - ant) / ant) * 100
-      if (!best || Math.abs(dif) > Math.abs(best.dif)) best = { ant, act, dif }
-    }
-    return best ? { key: p.key, nombre: p.nombre, sigla: p.sigla, ...best } : null
-  }).filter(a => a && Math.abs(a.dif) >= 0.5).sort((a, b) => Math.abs(b.dif) - Math.abs(a.dif))
+    const b = mejorSalto(p.hist, filtroPeriodo)
+    return b ? { key: p.key, nombre: p.nombre, sigla: p.sigla, ...b } : null
+  }).filter(a => a && Math.abs(a.dif) >= 0.5)
+    .filter(a => filtroDir === 'todas' || (filtroDir === 'sube' ? a.dif > 0 : a.dif < 0))
+    .sort((a, b) => Math.abs(b.dif) - Math.abs(a.dif))
   const alertasMostradas = verTodo ? alertas.slice(0, 100) : alertas.slice(0, 8)
+  const hayHistorial = catalogo.some(p => p.hist && p.hist.length >= 2)
 
   // Inflación por proveedor — variación promedio de costo de sus productos
   const inflProv = {}
@@ -147,28 +160,47 @@ export default function Dashboard() {
       </div>
 
       {/* Variación de precios */}
-      {alertas.length > 0 && <>
+      {hayHistorial && <>
         <div className="sec-title">🚨 Productos que cambiaron de precio <span className="text-[#999] normal-case tracking-normal">— de más a menos fluctuante</span></div>
-        <div className="pcard overflow-x-auto">
-          <table className="w-full border-collapse text-sm">
-            <thead><tr>{['Producto', 'Prov.', 'Antes', 'Ahora', 'Variación', ''].map(TH)}</tr></thead>
-            <tbody>
-              {alertasMostradas.map((a, i) => (
-                <tr key={i} onClick={() => nav('/catalogo/' + encodeURIComponent(a.key))} className="border-b border-[#e0ddd5] cursor-pointer hover:bg-[#faf9f6]" style={a.dif > 0 ? { background: '#fdecea', boxShadow: 'inset 4px 0 0 #c0392b' } : {}}>
-                  <td className="px-3 py-2 font-semibold">{a.nombre}</td>
-                  <td className="px-3 py-2 font-mono">{a.sigla}</td>
-                  <td className="px-3 py-2 font-mono">{formatCOP(a.ant)}</td>
-                  <td className="px-3 py-2 font-mono">{formatCOP(a.act)}</td>
-                  <td className="px-3 py-2 font-mono" style={{ color: a.dif > 0 ? '#c0392b' : '#1a6b3c' }}>{a.dif > 0 ? '▲ +' : '▼ '}{a.dif.toFixed(1)}%</td>
-                  <td className="px-3 py-2 text-[#2980b9] font-mono text-xs whitespace-nowrap">ver →</td>
-                </tr>
+        <div className="pcard">
+          {/* Filtros */}
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mb-3">
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-[#999] font-mono mr-1">Dirección:</span>
+              {[['todas', 'Todas'], ['sube', '▲ Subieron'], ['baja', '▼ Bajaron']].map(([v, l]) => (
+                <button key={v} onClick={() => { setFiltroDir(v); setVerTodo(false) }} className={`px-2.5 py-1 font-mono text-xs border ${filtroDir === v ? 'bg-[#33302b] text-white border-[#33302b]' : 'border-[#ccc] text-[#666] hover:border-[#33302b]'}`}>{l}</button>
               ))}
-            </tbody>
-          </table>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-[#999] font-mono mr-1">Periodo:</span>
+              {[['todo', 'Histórico'], ['anio', 'Este año'], ['ult2', 'Últimas 2 compras']].map(([v, l]) => (
+                <button key={v} onClick={() => { setFiltroPeriodo(v); setVerTodo(false) }} className={`px-2.5 py-1 font-mono text-xs border ${filtroPeriodo === v ? 'bg-[#2980b9] text-white border-[#2980b9]' : 'border-[#ccc] text-[#666] hover:border-[#2980b9]'}`}>{l}</button>
+              ))}
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            {alertas.length === 0 ? <p className="text-[#999] font-mono text-sm py-2">No hay productos con esos filtros.</p> : (
+              <table className="w-full border-collapse text-sm">
+                <thead><tr>{['Producto', 'Prov.', 'Antes', 'Ahora', 'Variación', ''].map(TH)}</tr></thead>
+                <tbody>
+                  {alertasMostradas.map((a, i) => (
+                    <tr key={i} onClick={() => nav('/catalogo/' + encodeURIComponent(a.key))} className="border-b border-[#e0ddd5] cursor-pointer hover:bg-[#faf9f6]" style={a.dif > 0 ? { background: '#fdecea', boxShadow: 'inset 4px 0 0 #c0392b' } : { background: '#eafaf1', boxShadow: 'inset 4px 0 0 #1a6b3c' }}>
+                      <td className="px-3 py-2 font-semibold">{a.nombre}</td>
+                      <td className="px-3 py-2 font-mono">{a.sigla}</td>
+                      <td className="px-3 py-2 font-mono">{formatCOP(a.ant)}</td>
+                      <td className="px-3 py-2 font-mono">{formatCOP(a.act)}</td>
+                      <td className="px-3 py-2 font-mono" style={{ color: a.dif > 0 ? '#c0392b' : '#1a6b3c' }}>{a.dif > 0 ? '▲ +' : '▼ '}{a.dif.toFixed(1)}%</td>
+                      <td className="px-3 py-2 text-[#2980b9] font-mono text-xs whitespace-nowrap">ver →</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
           {alertas.length > 8 && (
             <div className="mt-3 flex items-center gap-3 flex-wrap">
               <button onClick={() => setVerTodo(v => !v)} className="btn-plat py-1.5 px-4 text-sm border-[#33302b] hover:bg-[#33302b] hover:text-white">
-                {verTodo ? '▲ Ver menos' : `▼ Ver más — ${alertas.length} productos cambiaron de precio`}
+                {verTodo ? '▲ Ver menos' : `▼ Ver más — ${alertas.length} en total`}
               </button>
               {verTodo && alertas.length > 100 && <span className="text-xs text-[#999] font-mono">mostrando los 100 más fluctuantes de {alertas.length}</span>}
             </div>
