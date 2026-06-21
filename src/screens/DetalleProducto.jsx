@@ -1,9 +1,18 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { getCatalogo } from '../lib/db'
+import { supabase } from '../lib/supabase'
 import { formatCOP, fechaCorta, provNombre } from '../lib/shared'
 
 const redLabel = r => r === 'auto' ? 'Auto ⚡' : r === 'exacto' ? 'Exacto' : r ? `múltiplo de ${Number(r).toLocaleString('es-CO')}` : '—'
+
+// Abre el PDF de la factura (bucket privado → URL firmada temporal, solo para usuarios logueados)
+async function verPdf(pdf_path) {
+  if (!pdf_path) return
+  const { data, error } = await supabase.storage.from('facturas-pdf').createSignedUrl(pdf_path, 300)
+  if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  else alert('No se pudo abrir el PDF de la factura.' + (error ? ` (${error.message})` : ''))
+}
 
 // Calcula marcas "bonitas" para el eje Y (ej: 3000,3250,3500,3750,4000) según el rango real
 function ticksBonitos(min, max, count = 4) {
@@ -121,7 +130,7 @@ export default function DetalleProducto() {
       <div className="pcard">
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm">
-            <thead><tr>{['Fecha', 'Unid.', 'Costo', 'Margen', 'Precio venta', 'Variación costo'].map(h =>
+            <thead><tr>{['Fecha', 'Unid.', 'Costo', 'Margen', 'Precio venta', 'Variación costo', 'Factura'].map(h =>
               <th key={h} className="bg-[#33302b] text-white text-left px-3 py-2 text-xs font-mono uppercase tracking-wider">{h}</th>)}</tr></thead>
             <tbody>
               {hist.map((x, i) => {
@@ -136,6 +145,11 @@ export default function DetalleProducto() {
                     <td className="px-3 py-2 font-mono text-center">{x.margen != null ? x.margen + '%' : '—'}</td>
                     <td className="px-3 py-2 font-mono text-[#1a6b3c]">{formatCOP(x.venta)}</td>
                     <td className="px-3 py-2 font-mono" style={{ color: col }}>{dif ? (x.costo > prev ? '▲ +' : '') + dif + '%' : '—'}</td>
+                    <td className="px-3 py-2 text-center">
+                      {x.pdf_path
+                        ? <button onClick={() => verPdf(x.pdf_path)} className="text-[#2980b9] hover:underline font-mono text-xs" title={'Factura ' + (x.factura || '')}>📄 Ver</button>
+                        : <span className="text-[#ccc]">—</span>}
+                    </td>
                   </tr>
                 )
               })}

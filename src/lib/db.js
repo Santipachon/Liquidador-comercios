@@ -70,6 +70,17 @@ function keyProd(nombre, codigo, nit) {
   return (nit || '?') + '|' + (codigo || '') + '|' + norm(nombre).slice(0, 60)
 }
 
+// ─── PDFs de facturas (Storage privado 'facturas-pdf') ───
+const safeName = s => String(s || '').replace(/[^A-Za-z0-9_-]/g, '_')
+const pdfPathDe = numero => safeName(numero) + '.pdf'
+async function subirPdf(numero, blob) {
+  if (!numero || !blob) return null
+  const path = pdfPathDe(numero)
+  const { error } = await supabase.storage.from('facturas-pdf').upload(path, blob, { contentType: 'application/pdf', upsert: true })
+  if (error) { console.error('[pdf]', error.message); return null }
+  return path
+}
+
 // ─── Mapeadores caché → fila normalizada (para escribir) ───
 const productoToRow = p => ({
   clave: p.key, nombre: p.nombre, codigo: p.codigo || null, sigla: p.sigla || null, codigo_interno: p.codigo_interno || null,
@@ -100,7 +111,7 @@ const pendienteRow = p => ({
 })
 const bandejaRow = b => ({
   id: b.id, sigla: b.sigla || null, proveedor_nombre: b.proveedorNombre || null, nit: b.nit || null, numero: b.numero || null,
-  fecha_llegada: b.fechaLlegada || new Date().toISOString(), nombre_archivo: b.nombreArchivo || null, n_productos: b.nProductos ?? null, xml_text: b.xmlText || null,
+  fecha_llegada: b.fechaLlegada || new Date().toISOString(), nombre_archivo: b.nombreArchivo || null, n_productos: b.nProductos ?? null, xml_text: b.xmlText || null, pdf_path: b.pdfPath || null,
 })
 const configRow = () => ({
   id: 1, nombre: cache.config.nombre, nit: cache.config.nit, propietario: cache.config.propietario,
@@ -133,6 +144,7 @@ export async function inicializar() {
     const ventasByProd = groupBy(ventas.data || [], 'producto_id')
     const itemsByFact = groupBy(fitems.data || [], 'factura_id')
     const itemsByPed = groupBy(pitems.data || [], 'pedido_id')
+    const factById = new Map((fact.data || []).map(r => [r.id, r]))   // para enlazar cada historial con su factura/PDF
 
     cache.catalogo = (prod.data || []).map(r => ({
       key: r.clave, nombre: r.nombre, codigo: r.codigo, sigla: r.sigla, codigo_interno: r.codigo_interno,
@@ -140,7 +152,7 @@ export async function inicializar() {
       margen_recordado: r.margen_recordado, redondeo_recordado: r.redondeo_recordado, etiquetas_regla: r.etiquetas_regla,
       conteo: r.conteo_fecha ? { fecha: r.conteo_fecha, cantidad: r.conteo_cantidad } : undefined,
       hist: (histByProd.get(r.id) || [])
-        .map(h => ({ fecha: h.fecha, costo: h.costo, venta: h.venta, cantidad: h.cantidad, margen: h.margen, redondeo: h.redondeo }))
+        .map(h => { const fa = factById.get(h.factura_id); return { fecha: h.fecha, costo: h.costo, venta: h.venta, cantidad: h.cantidad, margen: h.margen, redondeo: h.redondeo, factura: fa?.numero || null, pdf_path: fa?.pdf_path || null } })
         .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || '')),
       ventas: (ventasByProd.get(r.id) || []).map(v => ({ fecha: v.fecha, cantidad: v.cantidad, precio: v.precio, fuente: v.fuente })),
     }))
@@ -170,7 +182,7 @@ export async function inicializar() {
 
     cache.bandeja = (band.data || []).map(r => ({
       id: r.id, sigla: r.sigla, proveedorNombre: r.proveedor_nombre, nit: r.nit, numero: r.numero,
-      fechaLlegada: r.fecha_llegada, nombreArchivo: r.nombre_archivo, nProductos: r.n_productos, xmlText: r.xml_text,
+      fechaLlegada: r.fecha_llegada, nombreArchivo: r.nombre_archivo, nProductos: r.n_productos, xmlText: r.xml_text, pdfPath: r.pdf_path,
     }))
 
     if (cfg.data) {
@@ -191,11 +203,13 @@ export function getBandeja() {
   return [...cache.bandeja].sort((a, b) => (b.fechaLlegada || '').localeCompare(a.fechaLlegada || ''))
 }
 export function addABandeja(item) {
-  if (item.numero) {
-    cache.bandeja.filter(x => x.numero === item.numero).forEach(x => bg(supabase.from('bandeja').delete().eq('id', x.id)))
-    cache.bandeja = cache.bandeja.filter(x => x.numero !== item.numero)
+  const { pdfBlob, ...rest } = item
+  if (rest.numero) {
+    cache.bandeja.filter(x => x.numero === rest.numero).forEach(x => bg(supabase.from('bandeja').delete().eq('id', x.id)))
+    cache.bandeja = cache.bandeja.filter(x => x.numero !== rest.numero)
   }
-  const nuevo = { id: 'b' + Date.now() + Math.floor(Math.random() * 1000), fechaLlegada: new Date().toISOString(), ...item }
+  const nuevo = { id: 'b' + Date.now() + Math.floor(Math.random() * 1000), fechaLlegada: new Date().toISOString(), ...rest }
+  if (pdfBlob && nuevo.numero) { nuevo.pdfPath = pdfPathDe(nuevo.numero); push(() => subirPdf(nuevo.numero, pdfBlob)) }  // sube el PDF de una vez
   cache.bandeja.unshift(nuevo)
   persist(); bg(supabase.from('bandeja').upsert(bandejaRow(nuevo), { onConflict: 'id' }))
 }
@@ -275,16 +289,18 @@ export function guardarLiquidacion(p) {
     costoConIva: Math.round(costoSinIva + iva), venta: Math.round(venta),
     ganancia: Math.round(venta - (costoSinIva + iva)),
   }
+  const pdfPath = p.pdfBlob ? pdfPathDe(p.numero || '') : (p.pdfPath || null)
+  factura.pdf_path = pdfPath
   const idx = cache.facturas.findIndex(f => f.id === id)
   if (idx >= 0) cache.facturas[idx] = factura; else cache.facturas.push(factura)
-  p.items.forEach(it => upsertProductoLocal(it, p.sigla, p.nit, factura.fecha))
+  p.items.forEach(it => upsertProductoLocal(it, p.sigla, p.nit, factura.fecha, factura.numero, pdfPath))
   persist()
   push(() => pushLiquidacion(factura, p))
   return factura
 }
 
 // Catálogo en memoria (denormalizado) — clave NIT+código+nombre.
-function upsertProductoLocal(it, sigla, nit, fecha) {
+function upsertProductoLocal(it, sigla, nit, fecha, numero, pdfPath) {
   const k = keyProd(it.nombre, it.codigo, nit)
   let prod = cache.catalogo.find(x => x.key === k)
   if (!prod) { prod = { key: k, nombre: it.nombre, sigla: sigla || '?', veces: 0, hist: [] }; cache.catalogo.push(prod) }
@@ -295,7 +311,7 @@ function upsertProductoLocal(it, sigla, nit, fecha) {
   prod.ultima_fecha = fecha
   prod.veces = (prod.veces || 0) + 1
   prod.hist = prod.hist || []
-  prod.hist.push({ fecha, costo: it.precio_unitario, venta: it.precio_venta, cantidad: it.cantidad, margen: it.margen, redondeo: it.redondeo })
+  prod.hist.push({ fecha, costo: it.precio_unitario, venta: it.precio_venta, cantidad: it.cantidad, margen: it.margen, redondeo: it.redondeo, factura: numero || null, pdf_path: pdfPath || null })
   return prod
 }
 
@@ -306,6 +322,10 @@ async function pushLiquidacion(factura, p) {
     .from('facturas').upsert(facturaHeaderRow(factura), { onConflict: 'numero' }).select('id').single()
   if (fe) throw fe
   const fid = frow.id
+  // PDF: subir el del ZIP (carga directa) o enlazar el ya subido desde la bandeja
+  let pdfPath = p.pdfPath || null
+  if (p.pdfBlob) pdfPath = await subirPdf(factura.numero, p.pdfBlob)
+  if (pdfPath) { const up = await supabase.from('facturas').update({ pdf_path: pdfPath }).eq('id', fid); if (up.error) throw up.error }
   // limpiar lo previo de ESTA factura (evita duplicar al re-guardar)
   const del1 = await supabase.from('factura_items').delete().eq('factura_id', fid); if (del1.error) throw del1.error
   const del2 = await supabase.from('producto_hist').delete().eq('factura_id', fid); if (del2.error) throw del2.error

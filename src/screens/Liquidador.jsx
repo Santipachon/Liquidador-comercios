@@ -366,6 +366,8 @@ export default function Liquidador({ onGuardar }) {
   const [toast, setToast] = useState(null)
   const [fileName, setFileName] = useState(null)
   const [pdfUrl, setPdfUrl] = useState(null)
+  const [pdfBlob, setPdfBlob] = useState(null)              // PDF del ZIP cargado directo (para subirlo al guardar)
+  const [pdfPathActual, setPdfPathActual] = useState(null)  // ruta del PDF ya subido (cuando viene de la bandeja)
   const [margenGlobal, setMargenGlobal] = useState('')
   // ─── Filtro: búsqueda + ordenamiento por columna + rango de precio ───
   const [busqueda, setBusqueda] = useState('')
@@ -425,7 +427,7 @@ export default function Liquidador({ onGuardar }) {
     setFileName(file.name)
     setError(null)
     setLoading(true)
-    setPdfUrl(null)
+    setPdfUrl(null); setPdfBlob(null); setPdfPathActual(null)
 
     try {
       if (file.name.endsWith('.zip')) {
@@ -449,6 +451,7 @@ export default function Liquidador({ onGuardar }) {
         }
 
         if (pdfBlob) {
+          setPdfBlob(pdfBlob)
           const url = URL.createObjectURL(pdfBlob)
           setPdfUrl(url)
         }
@@ -472,16 +475,21 @@ export default function Liquidador({ onGuardar }) {
   }
 
   // ─── Bandeja: leer XML de un archivo (.xml o .zip) ───
-  async function leerXmlDeArchivo(file) {
+  async function leerXmlYpdf(file) {
     const lower = file.name.toLowerCase()
     if (lower.endsWith('.zip')) {
       const zip = await JSZip.loadAsync(file)
+      let xmlText = null, pdf = null
       for (const [name, entry] of Object.entries(zip.files)) {
-        if (!entry.dir && name.toLowerCase().endsWith('.xml')) return await entry.async('string')
+        if (entry.dir) continue
+        const l = name.toLowerCase()
+        if (l.endsWith('.xml') && !xmlText) xmlText = await entry.async('string')
+        if (l.endsWith('.pdf') && !pdf) pdf = new Blob([await entry.async('blob')], { type: 'application/pdf' })
       }
-      throw new Error('El ZIP no contiene un XML')
+      if (!xmlText) throw new Error('El ZIP no contiene un XML')
+      return { xmlText, pdfBlob: pdf }
     }
-    if (lower.endsWith('.xml')) return await file.text()
+    if (lower.endsWith('.xml')) return { xmlText: await file.text(), pdfBlob: null }
     throw new Error('Solo .xml o .zip')
   }
 
@@ -492,7 +500,7 @@ export default function Liquidador({ onGuardar }) {
     let ok = 0, fail = 0
     for (const file of files) {
       try {
-        const xmlText = await leerXmlDeArchivo(file)
+        const { xmlText, pdfBlob } = await leerXmlYpdf(file)
         const data = parsearFacturaDIAN(xmlText)
         if (!data || !data.length) { fail++; continue }
         const prov = extraerProveedor(xmlText)
@@ -505,7 +513,7 @@ export default function Liquidador({ onGuardar }) {
         const etiqueta = `${sigla || (prov.nombre || 'PROV').slice(0, 12).replace(/\s+/g, '')}_${numero || 'sinNum'}_${nitDigits || 'sinNit'}_${fcorta}`
         addABandeja({
           sigla, proveedorNombre: prov.nombre || '', nit: prov.nit || '', numero,
-          fechaLlegada: hoy.toISOString(), nombreArchivo: etiqueta, nProductos: data.length, xmlText,
+          fechaLlegada: hoy.toISOString(), nombreArchivo: etiqueta, nProductos: data.length, xmlText, pdfBlob,
         })
         ok++
       } catch { fail++ }
@@ -516,7 +524,7 @@ export default function Liquidador({ onGuardar }) {
 
   // Carga una factura de la bandeja en el liquidador (reusa el mismo parseo)
   async function liquidarDeBandeja(item) {
-    setError(null); setPdfUrl(null); setLoading(true)
+    setError(null); setPdfUrl(null); setPdfBlob(null); setPdfPathActual(item.pdfPath || null); setLoading(true)
     try {
       await processXml(item.xmlText)
       setFileName(item.nombreArchivo)
@@ -551,7 +559,7 @@ export default function Liquidador({ onGuardar }) {
   }
 
   function handleClear() {
-    setProducts([]); setError(null); setFileName(null); setPdfUrl(null)
+    setProducts([]); setError(null); setFileName(null); setPdfUrl(null); setPdfBlob(null); setPdfPathActual(null)
     setBusqueda(''); setSortCol(null); setSortDir('nat'); setHighlightIdx(null)
     setPrecioMin(''); setPrecioMax('')
     setSiglaFactura(''); setProveedorXml(null); setNumeroFactura('')
@@ -715,6 +723,7 @@ export default function Liquidador({ onGuardar }) {
       nit: proveedorXml?.nit || '',
       proveedorNombre: proveedorXml?.nombre || '',
       fecha: new Date().toISOString(),
+      pdfBlob, pdfPath: pdfPathActual,
       items: products.map(p => {
         const precio = calcPrecio(p)
         return {
