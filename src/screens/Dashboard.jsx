@@ -27,6 +27,7 @@ export default function Dashboard() {
   const nav = useNavigate()
   const [, force] = useState(0)
   const refresh = () => force(n => n + 1)
+  const [verTodo, setVerTodo] = useState(false)   // lista de variación de precios: colapsada / expandida
 
   const facturas = getFacturas()
   const catalogo = getCatalogo()
@@ -55,11 +56,20 @@ export default function Dashboard() {
   pendientes.forEach(p => { const k = normalizar(p.prod); (demanda[k] = demanda[k] || { nombre: p.prod, n: 0, und: 0 }); demanda[k].n++; demanda[k].und += p.cant || 0 })
   const masPedido = Object.values(demanda).sort((a, b) => b.n - a.n).slice(0, 8)
 
-  // Variación de precios (subidas) — última vs anterior
+  // Variación de precios — el MAYOR salto entre compras consecutivas de todo el historial
+  // (detecta errores aunque no sean la compra más reciente). Ordenado de más a menos fluctuante.
   const alertas = catalogo.filter(p => p.hist && p.hist.length >= 2).map(p => {
-    const h = p.hist; const ant = h[h.length - 2].costo, act = h[h.length - 1].costo
-    return { nombre: p.nombre, sigla: p.sigla, ant, act, dif: ant ? ((act - ant) / ant) * 100 : 0 }
-  }).filter(a => Math.abs(a.dif) >= 0.5).sort((a, b) => b.dif - a.dif).slice(0, 8)
+    const h = p.hist
+    let best = null
+    for (let i = 1; i < h.length; i++) {
+      const ant = h[i - 1].costo, act = h[i].costo
+      if (!ant) continue
+      const dif = ((act - ant) / ant) * 100
+      if (!best || Math.abs(dif) > Math.abs(best.dif)) best = { ant, act, dif }
+    }
+    return best ? { key: p.key, nombre: p.nombre, sigla: p.sigla, ...best } : null
+  }).filter(a => a && Math.abs(a.dif) >= 0.5).sort((a, b) => Math.abs(b.dif) - Math.abs(a.dif))
+  const alertasMostradas = verTodo ? alertas.slice(0, 100) : alertas.slice(0, 8)
 
   // Inflación por proveedor — variación promedio de costo de sus productos
   const inflProv = {}
@@ -138,23 +148,32 @@ export default function Dashboard() {
 
       {/* Variación de precios */}
       {alertas.length > 0 && <>
-        <div className="sec-title">🚨 Productos que cambiaron de precio</div>
+        <div className="sec-title">🚨 Productos que cambiaron de precio <span className="text-[#999] normal-case tracking-normal">— de más a menos fluctuante</span></div>
         <div className="pcard overflow-x-auto">
           <table className="w-full border-collapse text-sm">
-            <thead><tr>{['Producto', 'Prov.', 'Antes', 'Ahora', 'Variación'].map(TH)}</tr></thead>
+            <thead><tr>{['Producto', 'Prov.', 'Antes', 'Ahora', 'Variación', ''].map(TH)}</tr></thead>
             <tbody>
-              {alertas.map((a, i) => (
-                <tr key={i} className="border-b border-[#e0ddd5]" style={a.dif > 0 ? { background: '#fdecea', boxShadow: 'inset 4px 0 0 #c0392b' } : {}}>
+              {alertasMostradas.map((a, i) => (
+                <tr key={i} onClick={() => nav('/catalogo/' + encodeURIComponent(a.key))} className="border-b border-[#e0ddd5] cursor-pointer hover:bg-[#faf9f6]" style={a.dif > 0 ? { background: '#fdecea', boxShadow: 'inset 4px 0 0 #c0392b' } : {}}>
                   <td className="px-3 py-2 font-semibold">{a.nombre}</td>
                   <td className="px-3 py-2 font-mono">{a.sigla}</td>
                   <td className="px-3 py-2 font-mono">{formatCOP(a.ant)}</td>
                   <td className="px-3 py-2 font-mono">{formatCOP(a.act)}</td>
                   <td className="px-3 py-2 font-mono" style={{ color: a.dif > 0 ? '#c0392b' : '#1a6b3c' }}>{a.dif > 0 ? '▲ +' : '▼ '}{a.dif.toFixed(1)}%</td>
+                  <td className="px-3 py-2 text-[#2980b9] font-mono text-xs whitespace-nowrap">ver →</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <p className="text-xs text-[#999] font-mono mt-2">El precio de venta se recalcula solo. Próximamente: re-etiquetar el stock viejo al nuevo precio.</p>
+          {alertas.length > 8 && (
+            <div className="mt-3 flex items-center gap-3 flex-wrap">
+              <button onClick={() => setVerTodo(v => !v)} className="btn-plat py-1.5 px-4 text-sm border-[#33302b] hover:bg-[#33302b] hover:text-white">
+                {verTodo ? '▲ Ver menos' : `▼ Ver más — ${alertas.length} productos cambiaron de precio`}
+              </button>
+              {verTodo && alertas.length > 100 && <span className="text-xs text-[#999] font-mono">mostrando los 100 más fluctuantes de {alertas.length}</span>}
+            </div>
+          )}
+          <p className="text-xs text-[#999] font-mono mt-2">Clic en una fila para ver su historial y la factura (PDF). El precio de venta se recalcula solo.</p>
         </div>
       </>}
 
