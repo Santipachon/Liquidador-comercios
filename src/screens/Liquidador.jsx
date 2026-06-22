@@ -781,7 +781,7 @@ export default function Liquidador({ onGuardar }) {
             ) : (
               <div className="space-y-2">
                 {bandeja.map(item => {
-                  const f = item.fechaLlegada ? item.fechaLlegada.slice(0, 10) : '—'
+                  const f = item.fechaLlegada ? new Date(item.fechaLlegada).toLocaleString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'America/Bogota' }) : '—'
                   return (
                     <div key={item.id} className="flex items-center justify-between gap-3 border border-[#e0ddd5] bg-[#faf9f6] px-3 py-2 flex-wrap">
                       <div>
