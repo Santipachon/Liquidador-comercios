@@ -369,6 +369,7 @@ export default function Liquidador({ onGuardar }) {
   const [pdfUrl, setPdfUrl] = useState(null)
   const [pdfBlob, setPdfBlob] = useState(null)              // PDF del ZIP cargado directo (para subirlo al guardar)
   const [pdfPathActual, setPdfPathActual] = useState(null)  // ruta del PDF ya subido (cuando viene de la bandeja)
+  const [bandejaItemId, setBandejaItemId] = useState(null)  // id en la bandeja de la factura que se está liquidando (se quita solo al GUARDAR)
   const [margenGlobal, setMargenGlobal] = useState('')
   // ─── Filtro: búsqueda + ordenamiento por columna + rango de precio ───
   const [busqueda, setBusqueda] = useState('')
@@ -428,7 +429,7 @@ export default function Liquidador({ onGuardar }) {
     setFileName(file.name)
     setError(null)
     setLoading(true)
-    setPdfUrl(null); setPdfBlob(null); setPdfPathActual(null)
+    setPdfUrl(null); setPdfBlob(null); setPdfPathActual(null); setBandejaItemId(null)
 
     try {
       if (file.name.endsWith('.zip')) {
@@ -537,7 +538,7 @@ export default function Liquidador({ onGuardar }) {
           if (blob) setPdfUrl(URL.createObjectURL(blob))
         } catch { /* si el PDF no carga, la liquidación igual continúa */ }
       }
-      quitarDeBandeja(item.id); refrescarBandeja()
+      setBandejaItemId(item.id)   // NO se quita de la bandeja hasta que se guarde de verdad
       window.scrollTo({ top: 0, behavior: 'smooth' })
     } catch (e) {
       showToast(e.message || 'No se pudo liquidar esta factura', 'error', 6000)
@@ -568,7 +569,7 @@ export default function Liquidador({ onGuardar }) {
   }
 
   function handleClear() {
-    setProducts([]); setError(null); setFileName(null); setPdfUrl(null); setPdfBlob(null); setPdfPathActual(null)
+    setProducts([]); setError(null); setFileName(null); setPdfUrl(null); setPdfBlob(null); setPdfPathActual(null); setBandejaItemId(null)
     setBusqueda(''); setSortCol(null); setSortDir('nat'); setHighlightIdx(null)
     setPrecioMin(''); setPrecioMax('')
     setSiglaFactura(''); setProveedorXml(null); setNumeroFactura('')
@@ -744,6 +745,7 @@ export default function Liquidador({ onGuardar }) {
       }),
     }
     onGuardar(payload)
+    if (bandejaItemId) { quitarDeBandeja(bandejaItemId); refrescarBandeja(); setBandejaItemId(null) }  // recién ahora sale de la bandeja
     if (avisar) showToast('✓ Liquidación guardada en el historial', 'success')
   }
 
