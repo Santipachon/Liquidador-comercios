@@ -18,6 +18,8 @@ function write(d) { try { localStorage.setItem(KEY, JSON.stringify(d)) } catch {
 const CONFIG_DEFAULT = {
   nombre: 'ALMACÉN EL ACERO', nit: '9517525-8', propietario: 'Nayibe Talero',
   direccion: '', ciudad: '', telefono: '',
+  inventarioInicio: null,   // "Día 0": desde aquí se cuentan movimientos de stock y el análisis "desde el inicio"
+  metaConteo: 100,
 }
 
 let cache = (() => {
@@ -117,6 +119,7 @@ const bandejaRow = b => ({
 const configRow = () => ({
   id: 1, nombre: cache.config.nombre, nit: cache.config.nit, propietario: cache.config.propietario,
   direccion: cache.config.direccion || null, ciudad: cache.config.ciudad || null, telefono: cache.config.telefono || null,
+  inventario_inicio: cache.config.inventarioInicio || null, meta_mensual_conteo: cache.config.metaConteo ?? 100,
   pedido_seq: cache.pedidoSeq || 0,
 })
 
@@ -193,6 +196,8 @@ export async function inicializar() {
       cache.config = {
         nombre: cfg.data.nombre, nit: cfg.data.nit, propietario: cfg.data.propietario,
         direccion: cfg.data.direccion || '', ciudad: cfg.data.ciudad || '', telefono: cfg.data.telefono || '',
+        inventarioInicio: cfg.data.inventario_inicio || null,
+        metaConteo: cfg.data.meta_mensual_conteo ?? 100,
       }
       cache.pedidoSeq = cfg.data.pedido_seq || 0
     }

@@ -98,7 +98,7 @@ export default function DetalleProducto() {
   if (!prod) return (
     <div className="pcard">
       <p className="text-[#666]">Producto no encontrado.</p>
-      <button className="btn-plat mt-3" onClick={() => nav('/catalogo')}>← Volver al catálogo</button>
+      <button className="btn-plat mt-3" onClick={() => nav('/catalogo')}>← Volver al inventario</button>
     </div>
   )
 
@@ -107,7 +107,7 @@ export default function DetalleProducto() {
 
   return (
     <div className="space-y-5">
-      <button className="text-[#2980b9] font-mono text-sm hover:underline" onClick={() => nav('/catalogo')}>← Volver al catálogo</button>
+      <button className="text-[#2980b9] font-mono text-sm hover:underline" onClick={() => nav('/catalogo')}>← Volver al inventario</button>
       <div className="pcard">
         <h2 className="text-xl font-bold">{prod.nombre}</h2>
         <p className="text-sm text-[#666] font-mono mt-1">
