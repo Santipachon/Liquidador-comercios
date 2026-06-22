@@ -54,18 +54,22 @@ function groupBy(rows, campo) {
   for (const r of rows) { const k = r[campo]; if (!m.has(k)) m.set(k, []); m.get(k).push(r) }
   return m
 }
-// Trae TODAS las filas de una tabla paginando (PostgREST devuelve máx. 1000 por consulta).
+// Trae TODAS las filas de una tabla (PostgREST devuelve máx. 1000 por consulta).
+// Pide la 1ª página con el total y luego el resto de páginas EN PARALELO (mucho más rápido).
 async function fetchAll(tabla) {
   const PAGE = 1000
-  let desde = 0, todo = []
-  for (;;) {
-    const { data, error } = await supabase.from(tabla).select('*').range(desde, desde + PAGE - 1)
-    if (error) return { data: null, error }
-    todo = todo.concat(data || [])
-    if (!data || data.length < PAGE) break
-    desde += PAGE
+  const primera = await supabase.from(tabla).select('*', { count: 'exact' }).range(0, PAGE - 1)
+  if (primera.error) return { data: null, error: primera.error }
+  const total = primera.count ?? (primera.data ? primera.data.length : 0)
+  if (total <= PAGE) return { data: primera.data || [], error: null }
+  const peticiones = []
+  for (let desde = PAGE; desde < total; desde += PAGE) {
+    peticiones.push(supabase.from(tabla).select('*').range(desde, desde + PAGE - 1))
   }
-  return { data: todo, error: null }
+  const resto = await Promise.all(peticiones)
+  const conError = resto.find(r => r.error)
+  if (conError) return { data: null, error: conError.error }
+  return { data: (primera.data || []).concat(...resto.map(r => r.data || [])), error: null }
 }
 
 // ─── Identidad de producto ───
