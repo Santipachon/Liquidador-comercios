@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback } from 'react'
 import * as XLSX from 'xlsx'
 import JSZip from 'jszip'
-import { getBandeja, addABandeja, quitarDeBandeja } from '../lib/db'
+import { getBandeja, addABandeja, quitarDeBandeja, getProveedores, addProveedor } from '../lib/db'
 import { supabase } from '../lib/supabase'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -83,7 +83,7 @@ function extraerProveedor(xmlText) {
 // Busca el proveedor en la tabla por NIT; null si no hay coincidencia segura
 function matchProveedor(nit) {
   if (!nit) return null
-  return PROVEEDORES.find(p => nitsCoinciden(p.nit, nit)) || null
+  return getProveedores().find(p => nitsCoinciden(p.nit, nit)) || null
 }
 
 // Extrae el número de la factura (ej: TGE121432, FEV5369)
@@ -747,6 +747,17 @@ export default function Liquidador({ onGuardar }) {
     if (avisar) showToast('✓ Liquidación guardada en el historial', 'success')
   }
 
+  // Registra un proveedor nuevo con la sigla escrita; valida que la sigla sea única
+  async function registrarProveedor() {
+    const s = siglaFactura.trim().toUpperCase()
+    if (!s) { showToast('Escriba una sigla (apodo) para el proveedor.', 'error'); return }
+    if (!proveedorXml?.nit) { showToast('No hay NIT del proveedor en el XML.', 'error'); return }
+    const r = await addProveedor({ nit: proveedorXml.nit, sigla: s, nombre: proveedorXml.nombre })
+    if (r.error) { showToast(r.error, 'error', 5000); return }
+    setSiglaFactura(s)
+    showToast(`✓ "${proveedorXml.nombre || 'Proveedor'}" registrado como ${s}`, 'success', 5000)
+  }
+
   const hasProducts = products.length > 0
   const bandeja = getBandeja()
 
@@ -774,7 +785,10 @@ export default function Liquidador({ onGuardar }) {
                   return (
                     <div key={item.id} className="flex items-center justify-between gap-3 border border-[#e0ddd5] bg-[#faf9f6] px-3 py-2 flex-wrap">
                       <div>
-                        <div className="font-semibold text-sm">{item.sigla ? item.sigla + ' · ' : ''}{item.proveedorNombre || 'Proveedor desconocido'}</div>
+                        <div className="font-semibold text-sm">
+                          {item.sigla ? item.sigla + ' · ' : ''}{item.proveedorNombre || 'Proveedor desconocido'}
+                          {!item.sigla && <span className="ml-2 text-[10px] font-mono bg-[#fef3c7] text-[#b45309] border border-[#fcd34d] px-1.5 py-0.5">sin registrar</span>}
+                        </div>
                         <div className="text-xs text-[#999] font-mono">Fact {item.numero || '—'} · NIT {item.nit || '—'} · {item.nProductos} prod · llegó {f}</div>
                       </div>
                       <div className="flex items-center gap-2">
@@ -969,11 +983,20 @@ export default function Liquidador({ onGuardar }) {
                     className="w-full bg-transparent font-mono font-bold text-base text-[#33302b] outline-none uppercase placeholder:text-[#d4a017] placeholder:font-normal"
                   />
                   <datalist id="lista-siglas">
-                    {PROVEEDORES.map((p, i) => <option key={i} value={p.sigla}>{p.nombre}</option>)}
+                    {getProveedores().map((p, i) => <option key={i} value={p.sigla}>{p.nombre}</option>)}
                   </datalist>
                   <p className="text-[10px] font-mono text-[#999] mt-0.5 truncate" title={proveedorXml ? `${proveedorXml.nombre} · NIT ${proveedorXml.nit}` : ''}>
                     {proveedorXml ? `${proveedorXml.nombre || 'NIT'} · ${proveedorXml.nit}` : 'Sin datos del emisor en el XML'}
                   </p>
+                  {proveedorXml?.nit && !matchProveedor(proveedorXml.nit) && (
+                    <div className="mt-1.5 border-t border-[#fcd34d] pt-1.5">
+                      <p className="text-[10px] font-mono text-[#b45309] mb-1">⚠ Proveedor sin registrar</p>
+                      <button type="button" onClick={registrarProveedor}
+                        className="w-full text-[11px] font-mono bg-[#33302b] text-white py-1 hover:bg-[#1a6b3c] transition-colors">
+                        ➕ Registrar como “{siglaFactura.trim().toUpperCase() || '…'}”
+                      </button>
+                    </div>
+                  )}
                 </div>
                 {[
                   ['Factura Nº', numeroFactura || '—'],

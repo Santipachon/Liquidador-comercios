@@ -28,6 +28,7 @@ let cache = (() => {
   d.pedidos = d.pedidos || []
   d.pedidoSeq = d.pedidoSeq || 0
   d.bandeja = d.bandeja || []
+  d.proveedores = d.proveedores || []
   d.config = { ...CONFIG_DEFAULT, ...(d.config || {}) }
   return d
 })()
@@ -124,7 +125,7 @@ let hidratado = false
 export function estaHidratado() { return hidratado }
 export async function inicializar() {
   try {
-    const [prod, hist, ventas, conteos, fact, fitems, pend, ped, pitems, band, cfg] = await Promise.all([
+    const [prod, hist, ventas, conteos, fact, fitems, pend, ped, pitems, band, provs, cfg] = await Promise.all([
       fetchAll('productos'),
       fetchAll('producto_hist'),
       fetchAll('producto_ventas'),
@@ -135,9 +136,10 @@ export async function inicializar() {
       fetchAll('pedidos'),
       fetchAll('pedido_items'),
       fetchAll('bandeja'),
+      fetchAll('proveedores'),
       supabase.from('config').select('*').eq('id', 1).maybeSingle(),
     ])
-    const err = prod.error || hist.error || ventas.error || conteos.error || fact.error || fitems.error || pend.error || ped.error || pitems.error || band.error || cfg.error
+    const err = prod.error || hist.error || ventas.error || conteos.error || fact.error || fitems.error || pend.error || ped.error || pitems.error || band.error || provs.error || cfg.error
     if (err) { console.error('[hidratar]', err.message); return false }
 
     const histByProd = groupBy(hist.data || [], 'producto_id')
@@ -184,6 +186,8 @@ export async function inicializar() {
       id: r.id, sigla: r.sigla, proveedorNombre: r.proveedor_nombre, nit: r.nit, numero: r.numero,
       fechaLlegada: r.fecha_llegada, nombreArchivo: r.nombre_archivo, nProductos: r.n_productos, xmlText: r.xml_text, pdfPath: r.pdf_path,
     }))
+
+    cache.proveedores = (provs.data || []).map(r => ({ id: r.id, sigla: r.sigla, nombre: r.nombre, nit: r.nit }))
 
     if (cfg.data) {
       cache.config = {
@@ -358,6 +362,19 @@ export function getProductoPorNombre(nombre, sigla) {
   const n = norm(nombre)
   return cache.catalogo.find(p => norm(p.nombre) === n && (!sigla || p.sigla === sigla))
     || cache.catalogo.find(p => norm(p.nombre) === n) || null
+}
+
+// ─── Proveedores (catálogo de la base; se pueden registrar nuevos al liquidar) ───
+export function getProveedores() { return [...cache.proveedores] }
+export async function addProveedor({ nit, sigla, nombre }) {
+  const s = (sigla || '').trim().toUpperCase()
+  if (!s) return { error: 'Escriba una sigla (apodo) para el proveedor.' }
+  if (cache.proveedores.some(p => (p.sigla || '').toUpperCase() === s)) return { error: `La sigla "${s}" ya existe. Use una distinta.` }
+  const { data, error } = await supabase.from('proveedores').insert({ sigla: s, nombre: nombre || s, nit: nit || null, activo: true }).select('id').single()
+  if (error) return { error: /sigla_unica|duplicate/i.test(error.message) ? `La sigla "${s}" ya existe.` : error.message }
+  const nuevo = { id: data.id, sigla: s, nombre: nombre || s, nit: nit || null }
+  cache.proveedores.push(nuevo); persist()
+  return { ok: true, proveedor: nuevo }
 }
 
 // ─── Pendientes ───
