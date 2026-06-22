@@ -2,6 +2,7 @@ import { useState, useRef, useCallback } from 'react'
 import * as XLSX from 'xlsx'
 import JSZip from 'jszip'
 import { getBandeja, addABandeja, quitarDeBandeja } from '../lib/db'
+import { supabase } from '../lib/supabase'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 const LETRA_MAP = {
@@ -528,6 +529,13 @@ export default function Liquidador({ onGuardar }) {
     try {
       await processXml(item.xmlText)
       setFileName(item.nombreArchivo)
+      // Mostrar el PDF guardado de esta factura (bucket privado → URL firmada temporal)
+      if (item.pdfPath) {
+        try {
+          const { data } = await supabase.storage.from('facturas-pdf').createSignedUrl(item.pdfPath, 3600)
+          if (data?.signedUrl) setPdfUrl(data.signedUrl)
+        } catch { /* si el PDF no carga, la liquidación igual continúa */ }
+      }
       quitarDeBandeja(item.id); refrescarBandeja()
       window.scrollTo({ top: 0, behavior: 'smooth' })
     } catch (e) {
