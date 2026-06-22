@@ -529,11 +529,12 @@ export default function Liquidador({ onGuardar }) {
     try {
       await processXml(item.xmlText)
       setFileName(item.nombreArchivo)
-      // Mostrar el PDF guardado de esta factura (bucket privado → URL firmada temporal)
+      // Mostrar el PDF guardado: lo bajamos como blob y lo mostramos desde memoria
+      // (las URLs firmadas de un bucket privado no siempre se dejan incrustar en el iframe)
       if (item.pdfPath) {
         try {
-          const { data } = await supabase.storage.from('facturas-pdf').createSignedUrl(item.pdfPath, 3600)
-          if (data?.signedUrl) setPdfUrl(data.signedUrl)
+          const { data: blob } = await supabase.storage.from('facturas-pdf').download(item.pdfPath)
+          if (blob) setPdfUrl(URL.createObjectURL(blob))
         } catch { /* si el PDF no carga, la liquidación igual continúa */ }
       }
       quitarDeBandeja(item.id); refrescarBandeja()
