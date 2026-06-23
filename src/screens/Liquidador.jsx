@@ -282,8 +282,14 @@ function UploadZone({ onFile, loading }) {
 function ProductRow({ product, index, origIndex, onUpdate, rowRef, highlighted }) {
   const { nombre, codigo, cantidad, precio_unitario, margen, iva_percent, redondeo, revisado, etiquetas } = product
 
-  // Base: precio unitario × margen, luego redondeo (el IVA es solo informativo)
-  const precio = redondear(precio_unitario * (1 + margen / 100), redondeo)
+  // Base: precio unitario × margen, luego redondeo (el IVA es solo informativo).
+  // Si hay precio fijado a mano (precio_override), ese manda y todo lo demás se calcula a partir de él.
+  const editado = product.precio_override != null
+  const precio = editado ? product.precio_override : redondear(precio_unitario * (1 + margen / 100), redondeo)
+  // Cuando el precio se fija a mano, el margen que se muestra es el IMPLÍCITO por ese precio
+  const margenMostrado = editado && precio_unitario > 0
+    ? Math.round(((precio / precio_unitario) - 1) * 1000) / 10
+    : margen
 
   const codigoLetras = numToLetras(precio)
 
@@ -325,9 +331,10 @@ function ProductRow({ product, index, origIndex, onUpdate, rowRef, highlighted }
       <td className="table-cell font-mono text-sm">{formatCOP(precio_unitario)}</td>
       <td className="table-cell">
         <div className="flex items-center gap-1">
-          <input type="number" min="0" max="999" value={margen}
+          <input type="number" min="0" max="999" value={margenMostrado}
             onChange={(e) => onUpdate(origIndex, 'margen', parseFloat(e.target.value) || 0)}
-            className="margin-input" />
+            title={editado ? 'Margen implícito por el precio fijado a mano (edítelo para volver al cálculo por margen)' : 'Margen sobre el costo'}
+            className={`margin-input ${editado ? 'text-[#1a6b3c]' : ''}`} />
           <span className="text-[#999] font-mono text-xs">%</span>
         </div>
       </td>
@@ -337,7 +344,7 @@ function ProductRow({ product, index, origIndex, onUpdate, rowRef, highlighted }
         </span>
       </td>
       <td className="table-cell">
-        <select value={redondeo}
+        <select value={editado ? 'exacto' : redondeo}
           onChange={(e) => onUpdate(origIndex, 'redondeo', e.target.value)}
           title="Cómo redondear el precio de venta (siempre hacia arriba)"
           className="border-2 border-[#8e44ad] bg-white font-mono text-sm py-1 px-1.5 cursor-pointer focus:outline-none focus:border-[#6c3483]">
@@ -346,7 +353,20 @@ function ProductRow({ product, index, origIndex, onUpdate, rowRef, highlighted }
           ))}
         </select>
       </td>
-      <td className="table-cell"><span className="calculated-cell">{formatCOP(precio)}</span></td>
+      <td className="table-cell">
+        <span className="inline-flex items-center gap-1">
+          <span className="text-[#1a6b3c] font-mono text-sm font-bold">$</span>
+          <input type="number" min="0" value={precio}
+            onChange={(e) => onUpdate(origIndex, 'precio_final', e.target.value === '' ? null : parseFloat(e.target.value))}
+            title="Precio de venta final — edítelo a gusto y el margen, el código y el redondeo se ajustan solos"
+            className={`w-24 bg-transparent font-mono font-bold text-sm text-[#1a6b3c] text-right py-1 px-1 border-b-2 border-dashed focus:outline-none focus:bg-[#f0fdf4] focus:border-solid focus:border-[#1a6b3c] ${editado ? 'border-[#1a6b3c]' : 'border-[#bbf7d0] hover:border-[#1a6b3c]'}`} />
+          {editado && (
+            <button onClick={() => onUpdate(origIndex, 'precio_final', null)}
+              title="Volver al precio calculado automáticamente por margen"
+              className="text-[13px] text-[#999] hover:text-[#1a6b3c] leading-none">↺</button>
+          )}
+        </span>
+      </td>
       <td className="table-cell"><span className="code-cell">{codigoLetras}</span></td>
     </tr>
   )
@@ -546,18 +566,29 @@ export default function Liquidador({ onGuardar }) {
   }
 
   function handleUpdate(index, field, value) {
-    setProducts(prev => prev.map((p, i) => i === index ? { ...p, [field]: value } : p))
+    setProducts(prev => prev.map((p, i) => {
+      if (i !== index) return p
+      // Precio de venta fijado a mano: queda EXACTO y todo lo demás (margen, código, redondeo) reacciona
+      if (field === 'precio_final') {
+        return { ...p, precio_override: (value == null || isNaN(value) || value < 0) ? null : value }
+      }
+      // Cambiar el margen o el redondeo vuelve al precio automático (quita el fijado a mano)
+      if (field === 'margen' || field === 'redondeo') {
+        return { ...p, [field]: value, precio_override: null }
+      }
+      return { ...p, [field]: value }
+    }))
   }
 
   function handleMargenAll() {
     const valor = parseFloat(margenGlobal)
     if (isNaN(valor) || valor < 0) return
-    setProducts(prev => prev.map(p => ({ ...p, margen: valor })))
+    setProducts(prev => prev.map(p => ({ ...p, margen: valor, precio_override: null })))
     showToast(`Margen ${valor}% aplicado a todos los productos`, 'success')
   }
 
   function handleRedondeoAll(modo) {
-    setProducts(prev => prev.map(p => ({ ...p, redondeo: modo })))
+    setProducts(prev => prev.map(p => ({ ...p, redondeo: modo, precio_override: null })))
     const label = (OPCIONES_REDONDEO.find(([v]) => v === modo) || [, modo])[1]
     showToast(`Redondeo "${label}" aplicado a todos`, 'success')
   }
@@ -576,6 +607,7 @@ export default function Liquidador({ onGuardar }) {
   }
 
   function calcPrecio(p) {
+    if (p.precio_override != null) return p.precio_override   // precio de venta fijado a mano
     return redondear(p.precio_unitario * (1 + p.margen / 100), p.redondeo)
   }
 
@@ -736,10 +768,14 @@ export default function Liquidador({ onGuardar }) {
       pdfBlob, pdfPath: pdfPathActual,
       items: products.map(p => {
         const precio = calcPrecio(p)
+        const manual = p.precio_override != null
+        const margenReal = manual && p.precio_unitario > 0
+          ? Math.round(((precio / p.precio_unitario) - 1) * 1000) / 10   // margen implícito por el precio fijado
+          : p.margen
         return {
           nombre: p.nombre, codigo: p.codigo, cantidad: p.cantidad,
           precio_unitario: p.precio_unitario, iva_percent: p.iva_percent,
-          margen: p.margen, redondeo: p.redondeo, etiquetas: p.etiquetas,
+          margen: margenReal, redondeo: manual ? 'exacto' : p.redondeo, etiquetas: p.etiquetas,
           precio_venta: precio, codigo_interno: numToLetras(precio),
         }
       }),
