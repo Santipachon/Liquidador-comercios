@@ -286,7 +286,7 @@ function UploadZone({ onFile, loading }) {
 }
 
 // ─── Product Row ──────────────────────────────────────────────────────────────
-function ProductRow({ product, index, origIndex, onUpdate, rowRef, highlighted }) {
+function ProductRow({ product, index, origIndex, onUpdate, rowRef, highlighted, registrarCelda, navCelda }) {
   const { nombre, codigo, cantidad, precio_unitario, margen, iva_percent, redondeo, revisado, etiquetas } = product
   const [margenTxt, setMargenTxt] = useState(null)   // texto del margen mientras se edita (permite vaciarlo sin saltar a "0")
 
@@ -327,6 +327,8 @@ function ProductRow({ product, index, origIndex, onUpdate, rowRef, highlighted }
       <td className="table-cell">
         <div className="flex items-center gap-1">
           <input type="number" min="0" max="9999" value={etiquetas}
+            ref={(el) => registrarCelda(index, 0, el)}
+            onKeyDown={(e) => navCelda(e, index, 0)}
             onFocus={(e) => e.target.select()}
             onChange={(e) => onUpdate(origIndex, 'etiquetas', Math.max(0, parseInt(e.target.value) || 0))}
             title="Cuántas etiquetas imprimir de este producto (filas repetidas en el Excel)"
@@ -342,6 +344,8 @@ function ProductRow({ product, index, origIndex, onUpdate, rowRef, highlighted }
       <td className="table-cell">
         <div className="flex items-center gap-1">
           <input type="text" inputMode="decimal" value={margenView}
+            ref={(el) => registrarCelda(index, 1, el)}
+            onKeyDown={(e) => navCelda(e, index, 1)}
             onFocus={(e) => e.target.select()}
             onChange={(e) => {
               const txt = e.target.value.replace(/[^0-9.]/g, '')
@@ -361,6 +365,8 @@ function ProductRow({ product, index, origIndex, onUpdate, rowRef, highlighted }
       </td>
       <td className="table-cell">
         <select value={editado ? 'exacto' : redondeo}
+          ref={(el) => registrarCelda(index, 2, el)}
+          onKeyDown={(e) => navCelda(e, index, 2)}
           onChange={(e) => onUpdate(origIndex, 'redondeo', e.target.value)}
           title="Cómo redondear el precio de venta (siempre hacia arriba)"
           className="border-2 border-[#8e44ad] bg-white font-mono text-sm py-1 px-1.5 cursor-pointer focus:outline-none focus:border-[#6c3483]">
@@ -373,6 +379,8 @@ function ProductRow({ product, index, origIndex, onUpdate, rowRef, highlighted }
         <span className="inline-flex items-center gap-1">
           <span className="text-[#1a6b3c] font-mono text-sm font-bold">$</span>
           <input type="number" min="0" value={precio}
+            ref={(el) => registrarCelda(index, 3, el)}
+            onKeyDown={(e) => navCelda(e, index, 3)}
             onFocus={(e) => e.target.select()}
             onChange={(e) => onUpdate(origIndex, 'precio_final', e.target.value === '' ? null : parseFloat(e.target.value))}
             title="Precio de venta final — edítelo a gusto y el margen, el código y el redondeo se ajustan solos"
@@ -719,6 +727,27 @@ export default function Liquidador({ onGuardar }) {
     return arr
   })()
 
+  // ─── Navegación entre celdas con las flechas (como una hoja de cálculo) ───
+  // Columnas editables, de izquierda a derecha: 0=Etiquetas 1=Margen 2=Redondeo 3=Precio
+  const cellRefs = useRef({})
+  const registrarCelda = (row, col, el) => { if (el) cellRefs.current[`${row}-${col}`] = el }
+  function navCelda(e, row, col) {
+    let dRow = 0, dCol = 0
+    switch (e.key) {
+      case 'ArrowDown': case 'Enter': dRow = 1; break
+      case 'ArrowUp': dRow = -1; break
+      case 'ArrowRight': dCol = 1; break
+      case 'ArrowLeft': dCol = -1; break
+      default: return
+    }
+    e.preventDefault()
+    const NCOLS = 4, total = vista.length
+    const r = Math.min(Math.max(0, row + dRow), total - 1)
+    const c = Math.min(Math.max(0, col + dCol), NCOLS - 1)
+    const destino = cellRefs.current[`${r}-${c}`]
+    if (destino) { destino.focus(); if (destino.select) destino.select() }
+  }
+
   // ─── Totales (siempre sobre la factura completa) ───
   const totales = (() => {
     let unidades = 0, costoSinIva = 0, ivaTotal = 0, ventaEstimada = 0, etiquetas = 0
@@ -1036,6 +1065,7 @@ export default function Liquidador({ onGuardar }) {
                 <tbody>
                   {vista.map(({ p, idx }, i) => (
                     <ProductRow key={idx} product={p} index={i} origIndex={idx} onUpdate={handleUpdate}
+                      registrarCelda={registrarCelda} navCelda={navCelda}
                       rowRef={(el) => { rowRefs.current[idx] = el }}
                       highlighted={highlightIdx === idx} />
                   ))}
