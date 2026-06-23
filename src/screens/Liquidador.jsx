@@ -1,8 +1,15 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import * as XLSX from 'xlsx'
 import JSZip from 'jszip'
 import { getBandeja, addABandeja, quitarDeBandeja, getProveedores, addProveedor } from '../lib/db'
 import { supabase } from '../lib/supabase'
+
+// Liquidación en curso: se guarda en localStorage para no perder el avance si el
+// navegador descarta/recarga la pestaña (frecuente en celular o por memoria).
+const LIQ_KEY = 'acero_liq_curso'
+function leerLiqGuardada() {
+  try { return JSON.parse(localStorage.getItem(LIQ_KEY)) || {} } catch { return {} }
+}
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 const LETRA_MAP = {
@@ -391,15 +398,15 @@ function Toast({ message, type }) {
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 export default function Liquidador({ onGuardar }) {
-  const [products, setProducts] = useState([])
+  const [products, setProducts] = useState(() => leerLiqGuardada().products || [])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [toast, setToast] = useState(null)
-  const [fileName, setFileName] = useState(null)
+  const [fileName, setFileName] = useState(() => leerLiqGuardada().fileName || null)
   const [pdfUrl, setPdfUrl] = useState(null)
   const [pdfBlob, setPdfBlob] = useState(null)              // PDF del ZIP cargado directo (para subirlo al guardar)
-  const [pdfPathActual, setPdfPathActual] = useState(null)  // ruta del PDF ya subido (cuando viene de la bandeja)
-  const [bandejaItemId, setBandejaItemId] = useState(null)  // id en la bandeja de la factura que se está liquidando (se quita solo al GUARDAR)
+  const [pdfPathActual, setPdfPathActual] = useState(() => leerLiqGuardada().pdfPathActual || null)  // ruta del PDF ya subido (cuando viene de la bandeja)
+  const [bandejaItemId, setBandejaItemId] = useState(() => leerLiqGuardada().bandejaItemId || null)  // id en la bandeja de la factura que se está liquidando (se quita solo al GUARDAR)
   const [margenGlobal, setMargenGlobal] = useState('')
   // ─── Filtro: búsqueda + ordenamiento por columna + rango de precio ───
   const [busqueda, setBusqueda] = useState('')
@@ -412,13 +419,32 @@ export default function Liquidador({ onGuardar }) {
   const rowRefs = useRef({})
   const highlightTimer = useRef(null)
   // ─── Sigla del proveedor (código interno del almacén) ───
-  const [siglaFactura, setSiglaFactura] = useState('')
-  const [proveedorXml, setProveedorXml] = useState(null) // { nit, nombre } leído del XML
-  const [numeroFactura, setNumeroFactura] = useState('')
+  const [siglaFactura, setSiglaFactura] = useState(() => leerLiqGuardada().siglaFactura || '')
+  const [proveedorXml, setProveedorXml] = useState(() => leerLiqGuardada().proveedorXml || null) // { nit, nombre } leído del XML
+  const [numeroFactura, setNumeroFactura] = useState(() => leerLiqGuardada().numeroFactura || '')
   // ─── Bandeja de facturas por liquidar ───
   const [, setBandejaTick] = useState(0)
   const refrescarBandeja = () => setBandejaTick(n => n + 1)
   const bandejaInputRef = useRef(null)
+
+  // ─── Persistencia: guarda la liquidación en curso para no perder el avance si se recarga la pestaña ───
+  useEffect(() => {
+    if (!products.length) { try { localStorage.removeItem(LIQ_KEY) } catch { /* noop */ } ; return }
+    try {
+      localStorage.setItem(LIQ_KEY, JSON.stringify({
+        products, fileName, pdfPathActual, bandejaItemId, siglaFactura, proveedorXml, numeroFactura,
+      }))
+    } catch { /* localStorage lleno o no disponible: la liquidación sigue en pantalla igual */ }
+  }, [products, fileName, pdfPathActual, bandejaItemId, siglaFactura, proveedorXml, numeroFactura])
+
+  // Si se restauró una liquidación que venía de la bandeja, recupera la vista previa del PDF
+  useEffect(() => {
+    if (pdfPathActual && !pdfUrl) {
+      supabase.storage.from('facturas-pdf').download(pdfPathActual)
+        .then(({ data }) => { if (data) setPdfUrl(URL.createObjectURL(data)) })
+        .catch(() => { /* si el PDF no carga, la liquidación restaurada sigue válida */ })
+    }
+  }, []) // solo al montar
 
   function showToast(message, type = 'info', duration = 3500) {
     setToast({ message, type })
