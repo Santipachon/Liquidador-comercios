@@ -281,6 +281,7 @@ function UploadZone({ onFile, loading }) {
 // ─── Product Row ──────────────────────────────────────────────────────────────
 function ProductRow({ product, index, origIndex, onUpdate, rowRef, highlighted }) {
   const { nombre, codigo, cantidad, precio_unitario, margen, iva_percent, redondeo, revisado, etiquetas } = product
+  const [margenTxt, setMargenTxt] = useState(null)   // texto del margen mientras se edita (permite vaciarlo sin saltar a "0")
 
   // Base: precio unitario × margen, luego redondeo (el IVA es solo informativo).
   // Si hay precio fijado a mano (precio_override), ese manda y todo lo demás se calcula a partir de él.
@@ -290,6 +291,7 @@ function ProductRow({ product, index, origIndex, onUpdate, rowRef, highlighted }
   const margenMostrado = editado && precio_unitario > 0
     ? Math.round(((precio / precio_unitario) - 1) * 1000) / 10
     : margen
+  const margenView = margenTxt != null ? margenTxt : String(margenMostrado)
 
   const codigoLetras = numToLetras(precio)
 
@@ -318,6 +320,7 @@ function ProductRow({ product, index, origIndex, onUpdate, rowRef, highlighted }
       <td className="table-cell">
         <div className="flex items-center gap-1">
           <input type="number" min="0" max="9999" value={etiquetas}
+            onFocus={(e) => e.target.select()}
             onChange={(e) => onUpdate(origIndex, 'etiquetas', Math.max(0, parseInt(e.target.value) || 0))}
             title="Cuántas etiquetas imprimir de este producto (filas repetidas en el Excel)"
             className="w-14 text-center border-2 border-[#8e44ad] bg-white font-mono text-sm py-1 px-1.5 focus:outline-none focus:border-[#6c3483] transition-colors" />
@@ -331,8 +334,14 @@ function ProductRow({ product, index, origIndex, onUpdate, rowRef, highlighted }
       <td className="table-cell font-mono text-sm">{formatCOP(precio_unitario)}</td>
       <td className="table-cell">
         <div className="flex items-center gap-1">
-          <input type="number" min="0" max="999" value={margenMostrado}
-            onChange={(e) => onUpdate(origIndex, 'margen', parseFloat(e.target.value) || 0)}
+          <input type="text" inputMode="decimal" value={margenView}
+            onFocus={(e) => e.target.select()}
+            onChange={(e) => {
+              const txt = e.target.value.replace(/[^0-9.]/g, '')
+              setMargenTxt(txt)
+              onUpdate(origIndex, 'margen', txt === '' || txt === '.' ? 0 : (parseFloat(txt) || 0))
+            }}
+            onBlur={() => setMargenTxt(null)}
             title={editado ? 'Margen implícito por el precio fijado a mano (edítelo para volver al cálculo por margen)' : 'Margen sobre el costo'}
             className={`margin-input ${editado ? 'text-[#1a6b3c]' : ''}`} />
           <span className="text-[#999] font-mono text-xs">%</span>
@@ -357,6 +366,7 @@ function ProductRow({ product, index, origIndex, onUpdate, rowRef, highlighted }
         <span className="inline-flex items-center gap-1">
           <span className="text-[#1a6b3c] font-mono text-sm font-bold">$</span>
           <input type="number" min="0" value={precio}
+            onFocus={(e) => e.target.select()}
             onChange={(e) => onUpdate(origIndex, 'precio_final', e.target.value === '' ? null : parseFloat(e.target.value))}
             title="Precio de venta final — edítelo a gusto y el margen, el código y el redondeo se ajustan solos"
             className={`w-24 bg-transparent font-mono font-bold text-sm text-[#1a6b3c] text-right py-1 px-1 border-b-2 border-dashed focus:outline-none focus:bg-[#f0fdf4] focus:border-solid focus:border-[#1a6b3c] ${editado ? 'border-[#1a6b3c]' : 'border-[#bbf7d0] hover:border-[#1a6b3c]'}`} />
