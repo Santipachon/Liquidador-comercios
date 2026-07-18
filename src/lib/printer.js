@@ -97,15 +97,16 @@ export function olvidar() {
 // ─── Escritura BLE ───
 // Escribe bytes a la característica en trozos, con una pausa entre cada uno.
 // La M110 NECESITA ese respiro para procesar; sin él "recibe pero no imprime".
-async function escribir(bytes, chunk = 128, pausa = 20) {
-  const props = caracteristica.properties || {}
-  const sinRespuesta = !!props.writeWithoutResponse   // la M110 usa write-sin-respuesta + pausa (como phomymo)
+async function escribir(bytes, chunk = 128, pausa = 15) {
   for (let i = 0; i < bytes.length; i += chunk) {
+    if (!caracteristica) throw new Error('Se perdió la conexión con la impresora.')
     const trozo = bytes.slice(i, i + chunk)
-    if (sinRespuesta) await caracteristica.writeValueWithoutResponse(trozo)
-    else if (caracteristica.writeValueWithResponse) await caracteristica.writeValueWithResponse(trozo)
+    // CON respuesta: espera el ACK de la impresora antes de seguir → evita el error
+    // "GATT operation already in progress" y las caídas por saturar el buffer
+    // (write-sin-respuesta se solapa y es inestable en Windows).
+    if (caracteristica.writeValueWithResponse) await caracteristica.writeValueWithResponse(trozo)
     else await caracteristica.writeValue(trozo)
-    await sleep(pausa)
+    if (pausa) await sleep(pausa)
   }
 }
 
@@ -256,14 +257,14 @@ async function secuenciaImpresion(cv, opc = {}) {
 // (el trabajo se reenvía completo, es seguro).
 export async function imprimirEtiqueta(datos, opc) {
   const cv = lienzoEtiqueta(datos)
-  for (let intento = 0; intento < 2; intento++) {
+  for (let intento = 0; intento < 3; intento++) {
     if (!conectada()) {
       const ok = await reconectar()
       if (!ok) throw new Error('La impresora no está conectada. Pulse "Conectar impresora".')
     }
     try { await secuenciaImpresion(cv, opc); return }
     catch (e) {
-      if (intento === 1) throw e
+      if (intento === 2) throw e
       caracteristica = null   // fuerza reconexión
       await sleep(500)
     }
