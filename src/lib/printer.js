@@ -120,34 +120,37 @@ export function lienzoEtiqueta(datos) {
   const ctx = cv.getContext('2d')
   ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H)
   ctx.fillStyle = '#000'
+  // Diseño (réplica de la etiqueta de referencia):
+  //   · fecha arriba a la derecha (pequeña)
+  //   · sigla del proveedor debajo, a la derecha
+  //   · CÓDIGO interno REPUBLICAS grande a la izquierda (protagonista; el precio va en letras, no en números)
+  //   · nombre del producto abajo, hasta 3 líneas
   ctx.textBaseline = 'top'
-  ctx.textAlign = 'left'
 
-  // 1) Nombre del producto (hasta 2 líneas, ajustado al ancho)
-  ctx.font = 'bold 17px Arial, sans-serif'
-  let y = 4
-  ajustarTexto(ctx, String(datos.nombre || '').toUpperCase(), W - 12, 2).forEach(l => {
-    ctx.fillText(l, 6, y); y += 18
+  // 1) Fecha (arriba a la derecha)
+  ctx.textAlign = 'right'
+  ctx.font = '15px Arial, sans-serif'
+  ctx.fillText(String(datos.fecha || ''), W - 6, 4)
+
+  // 2) Sigla del proveedor (derecha, bajo la fecha)
+  ctx.font = '24px Arial, sans-serif'
+  ctx.fillText(String(datos.sigla || ''), W - 6, 22)
+
+  // 3) Código REPUBLICAS — grande, a la izquierda (se auto-ajusta para caber)
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'middle'
+  const cod = String(datos.codigo || '')
+  const codPx = ajustarFuente(ctx, cod, W - 54, 50, 'Arial, sans-serif')
+  ctx.font = `${codPx}px Arial, sans-serif`
+  ctx.fillText(cod, 6, 55)
+
+  // 4) Nombre del producto (abajo, hasta 3 líneas)
+  ctx.textBaseline = 'top'
+  ctx.font = '16px Arial, sans-serif'
+  let y = 92
+  ajustarTexto(ctx, String(datos.nombre || '').toUpperCase(), W - 12, 3).forEach(l => {
+    ctx.fillText(l, 6, y); y += 19
   })
-
-  // Línea divisoria
-  ctx.fillRect(6, 44, W - 12, 2)
-
-  // 2) Sigla del proveedor (izq) + código interno REPUBLICAS (der)
-  ctx.font = 'bold 17px Arial, sans-serif'
-  ctx.fillText(String(datos.sigla || ''), 6, 50)
-  ctx.textAlign = 'right'
-  ctx.font = 'bold 21px "Courier New", monospace'
-  ctx.fillText(String(datos.codigo || ''), W - 6, 48)
-  ctx.textAlign = 'left'
-
-  // 3) Precio de venta (grande) + fecha
-  ctx.font = 'bold 30px Arial, sans-serif'
-  ctx.fillText(String(datos.precio || ''), 6, 82)
-  ctx.textAlign = 'right'
-  ctx.font = '13px Arial, sans-serif'
-  ctx.fillText(String(datos.fecha || ''), W - 6, 140)
-  ctx.textAlign = 'left'
 
   return cv
 }
@@ -185,6 +188,17 @@ function ajustarTexto(ctx, texto, maxAncho, maxLineas) {
     lineas[i] = ult + '…'
   }
   return lineas
+}
+
+// Devuelve el mayor tamaño de fuente (≤ maxPx) con el que `texto` cabe en maxAncho.
+function ajustarFuente(ctx, texto, maxAncho, maxPx, fam) {
+  let px = maxPx
+  ctx.font = `${px}px ${fam}`
+  while (px > 10 && ctx.measureText(texto).width > maxAncho) {
+    px--
+    ctx.font = `${px}px ${fam}`
+  }
+  return px
 }
 
 // ─── Canvas → bytes ESC/POS (configuración + imagen raster + pie) ───

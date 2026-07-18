@@ -127,21 +127,15 @@ export default function Impresion() {
           <span className={`inline-block w-3 h-3 rounded-full ${printer.on ? 'bg-[#1a6b3c]' : 'bg-[#c0392b]'}`} />
           <div>
             <p className="font-bold font-mono">{printer.on ? 'Impresora conectada' : 'Impresora desconectada'}</p>
-            <p className="text-xs text-[#777] font-mono">{printer.on ? (printer.nombre || 'Phomemo') : 'Pulse "Conectar impresora"'}</p>
+            <p className="text-xs text-[#777] font-mono">{printer.on ? (printer.nombre || 'Phomemo') : 'Pulse "Conectar impresora" y elija su impresora de la lista'}</p>
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {!printer.on ? (
-            <>
-              <button disabled={!compatible || conectando} onClick={() => conectarImpresora(false)}
-                className="btn-plat border-[#2980b9] text-[#2980b9] hover:bg-[#2980b9] hover:text-white disabled:opacity-40">
-                {conectando ? 'Buscando…' : '🔌 Conectar impresora'}
-              </button>
-              <button disabled={!compatible || conectando} onClick={() => conectarImpresora(true)}
-                className="text-[#2980b9] font-mono text-xs hover:underline disabled:opacity-40" title="Si no aparece con el filtro, muestra todos los dispositivos Bluetooth">
-                ¿No aparece? Mostrar todos
-              </button>
-            </>
+            <button disabled={!compatible || conectando} onClick={() => conectarImpresora(true)}
+              className="btn-plat border-[#2980b9] text-[#2980b9] hover:bg-[#2980b9] hover:text-white disabled:opacity-40">
+              {conectando ? 'Buscando…' : '🔌 Conectar impresora'}
+            </button>
           ) : (
             <>
               <button onClick={prueba} className="btn-plat border-[#1a6b3c] text-[#1a6b3c] hover:bg-[#1a6b3c] hover:text-white">🏷️ Imprimir prueba</button>
