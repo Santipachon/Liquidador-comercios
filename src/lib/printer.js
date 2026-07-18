@@ -14,6 +14,7 @@ import { formatCOP, fechaCorta, numToLetras } from './shared'
 
 const SERVICE = 0xff00      // servicio de la impresora
 const WRITE   = 0xff02      // característica donde se escriben los bytes
+const NOTIFY  = 0xff03      // característica de notificaciones (estado de la impresora)
 
 // Nombres BLE típicos de las Phomemo (para filtrar en el selector del navegador)
 const PREFIJOS = ['M110', 'M120', 'M200', 'M220', 'M221', 'M02', 'T02', 'D30', 'D35', 'P12', 'Phomemo']
@@ -109,6 +110,21 @@ async function abrirGatt() {
   await sleep(200)   // dar tiempo al stack BLE antes de descubrir servicios
   const service = await conReintento(() => server.getPrimaryService(SERVICE))
   caracteristica = await conReintento(() => service.getCharacteristic(WRITE))
+  // Suscribir a las notificaciones (0xFF03). Muchos firmwares de impresora NO se
+  // "activan" (ni encienden el LED de conexión) hasta que el host habilita el CCCD
+  // de notificaciones — es parte del handshake que hace la app oficial. Si falla, seguir.
+  try {
+    const notif = await conReintento(() => service.getCharacteristic(NOTIFY))
+    await notif.startNotifications()
+    notif.addEventListener('characteristicvaluechanged', ev => {
+      const dv = ev.target.value; const b = []
+      for (let i = 0; i < dv.byteLength; i++) b.push(dv.getUint8(i).toString(16).padStart(2, '0'))
+      log('📥 impresora responde: ' + b.join(' '))
+    })
+    log('✅ notificaciones activadas (0xff03) — handshake completo')
+  } catch (e) {
+    log('⚠️ no se pudo suscribir a 0xff03: ' + (e?.message || e))
+  }
 }
 
 // Reabre la conexión con la impresora YA emparejada, sin volver a mostrar el selector.
