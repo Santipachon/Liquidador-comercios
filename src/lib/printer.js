@@ -37,10 +37,12 @@ let uiDisc = null
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
-// Tamaño de cada write BLE (bytes). 128 = tamaño que la M110 SÍ acepta y por el que
-// los datos fluyen (con writeValueWithoutResponse). El solape ("already in progress")
-// se maneja reintentando el trozo (ver escribir), no bajando el tamaño.
-const CHUNK = 128
+// Tamaño de cada write BLE (bytes). 20 = cabe en el MTU mínimo (23) → un write CON
+// respuesta de este tamaño NUNCA se convierte en "Long Write" (que la M110 no soporta
+// y que la congelaba). Con-respuesta garantiza que los datos SALEN de verdad hacia la
+// impresora (sin-respuesta en Windows los deja en la cola local y no los transmite →
+// la impresora no recibe nada y no hace nada). Es lento pero fiable.
+const CHUNK = 20
 // Máximo que esperamos por CADA write. En Windows la promesa del write a veces se
 // queda colgada (no resuelve). El timeout la convierte en error → el reintento de
 // imprimirEtiqueta reconecta y reenvía el trabajo completo (así el FOOTER no se pierde).
@@ -141,12 +143,15 @@ export function olvidar() {
 // que el paquete salga → el siguiente se solapa → "GATT operation already in progress".
 // Se resuelve reintentando el MISMO trozo tras una pausa, hasta que el stack drene.
 async function escribirTrozo(trozo, etiqueta) {
-  const sinResp = !!caracteristica.writeValueWithoutResponse
+  // Preferir CON respuesta: en Windows es la única forma de garantizar que el paquete
+  // SALE hacia la impresora (sin-respuesta se queda en la cola local → la M110 no
+  // recibe nada). Con trozos de 20 B no dispara Long Write. Fallback a sin-respuesta.
+  const conResp = !!caracteristica.writeValueWithResponse
   for (let intento = 0; intento < 10; intento++) {
     if (!caracteristica) throw new Error('Se perdió la conexión con la impresora.')
     try {
-      const w = sinResp ? caracteristica.writeValueWithoutResponse(trozo)
-        : (caracteristica.writeValueWithResponse ? caracteristica.writeValueWithResponse(trozo) : caracteristica.writeValue(trozo))
+      const w = conResp ? caracteristica.writeValueWithResponse(trozo)
+        : (caracteristica.writeValueWithoutResponse ? caracteristica.writeValueWithoutResponse(trozo) : caracteristica.writeValue(trozo))
       await conTimeout(w, WRITE_TIMEOUT_MS, etiqueta)
       return
     } catch (e) {
@@ -158,7 +163,7 @@ async function escribirTrozo(trozo, etiqueta) {
   }
 }
 
-async function escribir(bytes, chunk = CHUNK, pausa = 15) {
+async function escribir(bytes, chunk = CHUNK, pausa = 0) {
   for (let i = 0; i < bytes.length; i += chunk) {
     if (!caracteristica) throw new Error('Se perdió la conexión con la impresora.')
     const trozo = new Uint8Array(bytes.slice(i, i + chunk)).buffer   // buffer de tamaño exacto
@@ -305,6 +310,8 @@ async function secuenciaImpresion(cv, opc = {}) {
   const { bytesPorFila, alto, raster } = rasterParaImpresora(cv)   // ancho del cabezal (48 bytes)
   reintentosOcupado = 0
 
+  const props = caracteristica.properties || {}
+  log(`carac 0x${WRITE.toString(16)}: write=${!!props.write} writeNR=${!!props.writeWithoutResponse}`)
   log(`config (vel=${velocidad} dens=${densidad} papel=0x${papel.toString(16)})`)
   await escribir(Uint8Array.of(0x1b, 0x4e, 0x0d, velocidad)); await sleep(30)  // velocidad (ESC N 0x0d)
   await escribir(Uint8Array.of(0x1b, 0x4e, 0x04, densidad));  await sleep(30)  // densidad (ESC N 0x04)
