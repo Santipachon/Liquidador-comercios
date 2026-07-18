@@ -8,6 +8,7 @@ import Pedidos from './screens/Pedidos'
 import Creditos from './screens/Creditos'
 import Dashboard from './screens/Dashboard'
 import Historial from './screens/Historial'
+import Impresion from './screens/Impresion'
 import Liquidador from './screens/Liquidador'
 import { guardarLiquidacion, inicializar } from './lib/db'
 import { supabase } from './lib/supabase'
@@ -157,6 +158,7 @@ export default function App() {
         <Route element={<Shell usuario={usuario} onLogout={logout} />}>
           <Route index element={<Home />} />
           <Route path="pendientes" element={<Pendientes />} />
+          <Route path="imprimir" element={<Impresion />} />
           <Route path="catalogo" element={admin(<Catalogo />)} />
           <Route path="catalogo/:key" element={admin(<DetalleProducto />)} />
           <Route path="pedidos" element={admin(<Pedidos />)} />

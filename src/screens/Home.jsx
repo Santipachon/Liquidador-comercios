@@ -1,5 +1,5 @@
 import { useNavigate, useOutletContext } from 'react-router-dom'
-import { getPendientes, creditosPorVencer, getBandeja } from '../lib/db'
+import { getPendientes, creditosPorVencer, getBandeja, getFacturas } from '../lib/db'
 
 // El Inicio sigue el CICLO del negocio:
 // pedir (pendiente) → pedido → crédito → liquidar → inventario → reportes
@@ -8,6 +8,7 @@ const CARDS = [
   { to: '/pedidos', ico: '🛒', t: 'Pedidos', d: 'Armar y enviar pedidos a proveedores', admin: true },
   { to: '/creditos', ico: '💳', t: 'Créditos', d: 'Pagos a proveedores y vencimientos', admin: true },
   { to: '/liquidar', ico: '🧾', t: 'Liquidar', d: 'Facturas que llegaron y poner precios', admin: true },
+  { to: '/imprimir', ico: '🏷️', t: 'Imprimir etiquetas', d: 'Imprimir liquidaciones en la Phomemo' },
   { to: '/catalogo', ico: '📦', t: 'Inventario', d: 'Stock, precios y alertas', admin: true },
   { to: '/dashboard', ico: '📊', t: 'Reportes', d: 'Cómo va el negocio', admin: true },
 ]
@@ -23,11 +24,13 @@ export default function Home() {
   const porAvisar = pendientes.filter(p => p.estado === 'llego')
   const creditos = esAdmin ? creditosPorVencer(3) : []
   const bandeja = esAdmin ? getBandeja() : []
+  const porImprimir = getFacturas().filter(f => !f.impresoAt).length
 
   // "Qué me toca hoy": tareas accionables, en orden del ciclo
   const tareas = [
     pendAbiertos.length && { ico: '📋', n: pendAbiertos.length, t: 'pendiente(s) por conseguir', to: '/pendientes', color: '#8e44ad' },
     bandeja.length && { ico: '🧾', n: bandeja.length, t: 'factura(s) por liquidar', to: '/liquidar', color: '#2980b9' },
+    porImprimir && { ico: '🏷️', n: porImprimir, t: 'factura(s) por imprimir', to: '/imprimir', color: '#d35400' },
     creditos.length && { ico: '⏰', n: creditos.length, t: 'crédito(s) por vencer', to: '/creditos', color: '#c0392b' },
     porAvisar.length && { ico: '📲', n: porAvisar.length, t: 'cliente(s) por avisar', to: '/pendientes', color: '#1a6b3c' },
   ].filter(Boolean)

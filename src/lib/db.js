@@ -170,6 +170,7 @@ export async function inicializar() {
       id: 'F-' + (r.numero || r.id), numero: r.numero, sigla: r.sigla, nit: r.nit, proveedorNombre: r.proveedor_nombre, fecha: r.fecha,
       num_productos: r.num_productos, unidades: r.unidades, etiquetas: r.etiquetas,
       costoSinIva: r.costo_sin_iva, iva: r.iva, costoConIva: r.costo_con_iva, venta: r.venta, ganancia: r.ganancia,
+      impresoAt: r.impreso_at || null, impresoPor: r.impreso_por || null,
       items: (itemsByFact.get(r.id) || []).map(it => ({
         nombre: it.nombre, codigo: it.codigo, cantidad: it.cantidad, precio_unitario: it.precio_unitario, iva_percent: it.iva_percent,
         margen: it.margen, redondeo: it.redondeo, precio_venta: it.precio_venta, codigo_interno: it.codigo_interno, etiquetas: it.etiquetas,
@@ -283,6 +284,25 @@ export function creditosPorVencer(dias = 3) {
 export function getFacturas() { return [...cache.facturas].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')) }
 export function getFactura(id) { return cache.facturas.find(f => f.id === id) }
 
+// ─── Estado de impresión de etiquetas ("Por imprimir" tacha lo ya impreso) ───
+// No forma parte de facturaHeaderRow: re-liquidar una factura NO borra su estado impreso.
+export function marcarImpreso(facturaId, quien) {
+  const f = cache.facturas.find(x => x.id === facturaId)
+  if (!f) return
+  f.impresoAt = new Date().toISOString()
+  f.impresoPor = quien || null
+  persist()
+  if (f.numero) bg(supabase.from('facturas').update({ impreso_at: f.impresoAt, impreso_por: f.impresoPor }).eq('numero', f.numero))
+}
+export function desmarcarImpreso(facturaId) {
+  const f = cache.facturas.find(x => x.id === facturaId)
+  if (!f) return
+  f.impresoAt = null
+  f.impresoPor = null
+  persist()
+  if (f.numero) bg(supabase.from('facturas').update({ impreso_at: null, impreso_por: null }).eq('numero', f.numero))
+}
+
 export function guardarLiquidacion(p) {
   const id = p.numero ? 'F-' + p.numero : 'F-' + Date.now()
   let costoSinIva = 0, iva = 0, venta = 0, unidades = 0, etiquetas = 0
@@ -305,7 +325,12 @@ export function guardarLiquidacion(p) {
   const pdfPath = p.pdfBlob ? pdfPathDe(p.numero || '') : (p.pdfPath || null)
   factura.pdf_path = pdfPath
   const idx = cache.facturas.findIndex(f => f.id === id)
-  if (idx >= 0) cache.facturas[idx] = factura; else cache.facturas.push(factura)
+  if (idx >= 0) {
+    const prev = cache.facturas[idx]                 // re-liquidar NO borra el estado impreso (ni en local)
+    factura.impresoAt = prev?.impresoAt || null
+    factura.impresoPor = prev?.impresoPor || null
+    cache.facturas[idx] = factura
+  } else cache.facturas.push(factura)
   p.items.forEach(it => upsertProductoLocal(it, p.sigla, p.nit, factura.fecha, factura.numero, pdfPath))
   persist()
   push(() => pushLiquidacion(factura, p))
