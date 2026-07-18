@@ -37,6 +37,25 @@ let uiDisc = null
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
+// Tamaño de cada write BLE (bytes). 128 = la referencia que SÍ imprime en M110
+// (transcriptionstream/phomymo). Con writeValueWithoutResponse (Write Command) un
+// trozo así entra en un solo PDU y NUNCA se convierte en "Long Write" (prepared
+// writes), que el firmware barato de la M110 no implementa y que la dejaba congelada
+// en "feeding". NO subir a 512: eso + writeValueWithResponse era el bug original.
+const CHUNK = 128
+// Máximo que esperamos por CADA write. En Windows la promesa del write a veces se
+// queda colgada (no resuelve). El timeout la convierte en error → el reintento de
+// imprimirEtiqueta reconecta y reenvía el trabajo completo (así el FOOTER no se pierde).
+const WRITE_TIMEOUT_MS = 4000
+
+// Rechaza si `promesa` no resuelve en `ms`. Evita que el bucle de escritura se cuelgue
+// para siempre (y que el FOOTER nunca se envíe) por un write BLE atascado en Windows.
+function conTimeout(promesa, ms, etiqueta) {
+  let t
+  const alarma = new Promise((_, rej) => { t = setTimeout(() => rej(new Error('Timeout BLE: ' + etiqueta)), ms) })
+  return Promise.race([promesa, alarma]).finally(() => clearTimeout(t))
+}
+
 // Reintenta una operación BLE que puede fallar de forma transitoria ("GATT operation failed").
 async function conReintento(fn, veces = 3, espera = 300) {
   let ultimo
@@ -100,17 +119,39 @@ export function olvidar() {
 }
 
 // ─── Escritura BLE ───
-// Escribe bytes a la característica en trozos, con una pausa entre cada uno.
-// La M110 NECESITA ese respiro para procesar; sin él "recibe pero no imprime".
-async function escribir(bytes, chunk = 512, pausa = 0) {
+// Escribe bytes a la característica en trozos ≤128 B, SIN respuesta y con una pausa
+// entre cada uno — EXACTAMENTE como la referencia que sí imprime en M110
+// (transcriptionstream/phomymo: CHUNK_SIZE=128, CHUNK_DELAY_MS=20, writeValueWithoutResponse).
+//
+// ⚠️  Por qué NO usar 512 + writeValueWithResponse (lo que congelaba la M110):
+//   · Un write de 512 B con writeValueWithResponse, si el MTU negociado es < ~515
+//     (habitual en la M110), fuerza un GATT Long Write (ATT Prepare/Execute Write).
+//     El firmware barato de la M110 NO implementa prepared writes → el raster llega
+//     corrupto/incompleto → no coincide con el header 1d 76 30 00 → "feeding" y se congela.
+//   · Un Write Command (writeValueWithoutResponse) NUNCA se convierte en Long Write, y
+//     con trozos de 128 B cabe en un solo PDU → entrega íntegra.
+//   · La pausa de 20 ms evita desbordar el pequeño buffer RX de la impresora.
+async function escribir(bytes, chunk = CHUNK, pausa = 20) {
   for (let i = 0; i < bytes.length; i += chunk) {
     if (!caracteristica) throw new Error('Se perdió la conexión con la impresora.')
-    const trozo = bytes.slice(i, i + chunk)
-    // CON respuesta: espera el ACK de la impresora → se autorregula (sin "GATT operation
-    // already in progress") y garantiza la entrega. Paquetes grandes (512) y sin pausa
-    // para que el trabajo COMPLETO llegue rápido y la M110 no se congele esperando.
-    if (caracteristica.writeValueWithResponse) await caracteristica.writeValueWithResponse(trozo)
-    else await caracteristica.writeValue(trozo)
+    // Copia a un ArrayBuffer propio de tamaño EXACTO (evita mandar bytes de más si
+    // 'bytes' es un subarray/vista sobre un buffer mayor).
+    const trozo = new Uint8Array(bytes.slice(i, i + chunk)).buffer
+    // Preferir SIN respuesta (Write Command). Solo si el characteristic no lo soporta
+    // se cae a con-respuesta / writeValue. Cada write va envuelto en un timeout: si en
+    // Windows la promesa se cuelga, aborta → imprimirEtiqueta reconecta y reintenta.
+    if (caracteristica.writeValueWithoutResponse) {
+      try {
+        await conTimeout(caracteristica.writeValueWithoutResponse(trozo), WRITE_TIMEOUT_MS, `write@${i}`)
+      } catch (e) {
+        if (caracteristica.writeValueWithResponse) await conTimeout(caracteristica.writeValueWithResponse(trozo), WRITE_TIMEOUT_MS, `write@${i}`)
+        else await conTimeout(caracteristica.writeValue(trozo), WRITE_TIMEOUT_MS, `write@${i}`)
+      }
+    } else if (caracteristica.writeValueWithResponse) {
+      await conTimeout(caracteristica.writeValueWithResponse(trozo), WRITE_TIMEOUT_MS, `write@${i}`)
+    } else {
+      await conTimeout(caracteristica.writeValue(trozo), WRITE_TIMEOUT_MS, `write@${i}`)
+    }
     if (pausa) await sleep(pausa)
   }
 }
@@ -238,7 +279,9 @@ function rasterParaImpresora(cvContenido) {
   cv.height = cvContenido.height
   const ctx = cv.getContext('2d')
   ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, anchoPx, cv.height)
-  const offsetX = Math.max(0, Math.round((anchoPx - cvContenido.width) / 2))  // centrado en el cabezal
+  // La unidad "Q199…" es una M110S → el rollo va alineado a la DERECHA del cabezal.
+  // (En una M110 normal sería centrado: (anchoPx - ancho)/2.)
+  const offsetX = Math.max(0, anchoPx - cvContenido.width)  // contenido pegado a la derecha
   ctx.drawImage(cvContenido, offsetX, 0)
   return rasterDeLienzo(cv)
 }
