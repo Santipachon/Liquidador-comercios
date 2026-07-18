@@ -364,8 +364,12 @@ async function secuenciaImpresion(cv, opc = {}) {
   const { bytesPorFila, alto, raster } = rasterParaImpresora(cv)   // ancho del cabezal (48 bytes)
   reintentosOcupado = 0
 
-  const props = caracteristica.properties || {}
-  log(`carac 0x${WRITE.toString(16)}: write=${!!props.write} writeNR=${!!props.writeWithoutResponse}`)
+  if (serialWriter) {
+    log('transporte: puerto COM (Web Serial)')
+  } else {
+    const props = caracteristica?.properties || {}
+    log(`transporte: BLE · carac 0x${WRITE.toString(16)}: write=${!!props.write} writeNR=${!!props.writeWithoutResponse}`)
+  }
   log(`config (vel=${velocidad} dens=${densidad} papel=0x${papel.toString(16)})`)
   await escribir(Uint8Array.of(0x1b, 0x4e, 0x0d, velocidad)); await sleep(30)  // velocidad (ESC N 0x0d)
   await escribir(Uint8Array.of(0x1b, 0x4e, 0x04, densidad));  await sleep(30)  // densidad (ESC N 0x04)
