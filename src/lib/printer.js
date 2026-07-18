@@ -18,9 +18,9 @@ const WRITE   = 0xff02      // característica donde se escriben los bytes
 // Nombres BLE típicos de las Phomemo (para filtrar en el selector del navegador)
 const PREFIJOS = ['M110', 'M120', 'M200', 'M220', 'M221', 'M02', 'T02', 'D30', 'D35', 'P12', 'Phomemo']
 
-// Lienzo de la etiqueta 40×30 mm a 203 dpi. El ancho debe ser múltiplo de 8
-// (cada byte = 8 puntos). 320 px = 40 bytes/línea · 240 px = 240 líneas de alto.
-export const ETIQUETA = { anchoPx: 320, altoPx: 240 }
+// Lienzo de la etiqueta 30×20 mm a 203 dpi. El ancho debe ser múltiplo de 8
+// (cada byte = 8 puntos). 240 px = 30 bytes/línea · 160 px = 160 líneas de alto.
+export const ETIQUETA = { anchoPx: 240, altoPx: 160 }
 
 // Parámetros de impresión por defecto (ajustables tras la prueba física)
 const DEFAULTS = { velocidad: 0x03, densidad: 0x08, papel: 0x0a } // papel 0x0a = etiquetas con separación (die-cut)
@@ -124,29 +124,29 @@ export function lienzoEtiqueta(datos) {
   ctx.textAlign = 'left'
 
   // 1) Nombre del producto (hasta 2 líneas, ajustado al ancho)
-  ctx.font = 'bold 25px Arial, sans-serif'
-  let y = 10
-  ajustarTexto(ctx, String(datos.nombre || '').toUpperCase(), W - 16, 2).forEach(l => {
-    ctx.fillText(l, 8, y); y += 29
+  ctx.font = 'bold 17px Arial, sans-serif'
+  let y = 4
+  ajustarTexto(ctx, String(datos.nombre || '').toUpperCase(), W - 12, 2).forEach(l => {
+    ctx.fillText(l, 6, y); y += 18
   })
 
   // Línea divisoria
-  ctx.fillRect(8, 96, W - 16, 2)
+  ctx.fillRect(6, 44, W - 12, 2)
 
   // 2) Sigla del proveedor (izq) + código interno REPUBLICAS (der)
-  ctx.font = 'bold 27px Arial, sans-serif'
-  ctx.fillText(String(datos.sigla || ''), 8, 108)
+  ctx.font = 'bold 17px Arial, sans-serif'
+  ctx.fillText(String(datos.sigla || ''), 6, 50)
   ctx.textAlign = 'right'
-  ctx.font = 'bold 33px "Courier New", monospace'
-  ctx.fillText(String(datos.codigo || ''), W - 8, 106)
+  ctx.font = 'bold 21px "Courier New", monospace'
+  ctx.fillText(String(datos.codigo || ''), W - 6, 48)
   ctx.textAlign = 'left'
 
   // 3) Precio de venta (grande) + fecha
-  ctx.font = 'bold 46px Arial, sans-serif'
-  ctx.fillText(String(datos.precio || ''), 8, 160)
+  ctx.font = 'bold 30px Arial, sans-serif'
+  ctx.fillText(String(datos.precio || ''), 6, 82)
   ctx.textAlign = 'right'
-  ctx.font = '19px Arial, sans-serif'
-  ctx.fillText(String(datos.fecha || ''), W - 8, 214)
+  ctx.font = '13px Arial, sans-serif'
+  ctx.fillText(String(datos.fecha || ''), W - 6, 140)
   ctx.textAlign = 'left'
 
   return cv

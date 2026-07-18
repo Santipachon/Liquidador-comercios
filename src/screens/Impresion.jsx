@@ -214,7 +214,7 @@ export default function Impresion() {
             className="bg-white border-[3px] border-[#33302b] p-4 max-w-xs" onClick={e => e.stopPropagation()}>
             <p className="font-mono text-xs text-[#777] mb-2 truncate">{preview.titulo}</p>
             <img src={preview.src} alt="Etiqueta" className="border border-[#ccc] w-full" style={{ imageRendering: 'pixelated' }} />
-            <p className="text-[10px] text-[#999] font-mono mt-2">Vista aproximada (40×30 mm). El tamaño real depende de la etiqueta cargada.</p>
+            <p className="text-[10px] text-[#999] font-mono mt-2">Vista aproximada (30×20 mm). El tamaño real depende de la etiqueta cargada.</p>
             <button onClick={() => setPreview(null)} className="btn-plat w-full mt-3 border-[#33302b] text-[#33302b] hover:bg-[#33302b] hover:text-white">Cerrar</button>
           </div>
         </div>
