@@ -22,6 +22,11 @@ const PREFIJOS = ['M110', 'M120', 'M200', 'M220', 'M221', 'M02', 'T02', 'D30', '
 // (cada byte = 8 puntos). 240 px = 30 bytes/línea · 160 px = 160 líneas de alto.
 export const ETIQUETA = { anchoPx: 240, altoPx: 160 }
 
+// El cabezal de la M110 es de 48 mm (384 px = 48 bytes/línea). SIEMPRE hay que
+// enviar ese ancho, aunque la etiqueta sea de 30 mm: el contenido va centrado.
+// Si se envía un ancho distinto, la M110 alimenta pero NO imprime (sale en blanco).
+const CABEZAL_BYTES = 48
+
 // Parámetros de impresión por defecto (ajustables tras la prueba física)
 const DEFAULTS = { velocidad: 0x05, densidad: 0x0a, papel: 0x0a } // papel 0x0a = etiquetas con separación (die-cut)
 
@@ -224,12 +229,26 @@ function rasterDeLienzo(cv) {
   return { bytesPorFila, alto: H, raster }
 }
 
+// Compone el contenido (240 px) centrado en el ancho REAL del cabezal (384 px = 48 bytes)
+// y lo rasteriza. Es lo que espera la M110 para imprimir de verdad.
+function rasterParaImpresora(cvContenido) {
+  const anchoPx = CABEZAL_BYTES * 8   // 384
+  const cv = document.createElement('canvas')
+  cv.width = anchoPx
+  cv.height = cvContenido.height
+  const ctx = cv.getContext('2d')
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, anchoPx, cv.height)
+  const offsetX = Math.max(0, Math.round((anchoPx - cvContenido.width) / 2))  // centrado en el cabezal
+  ctx.drawImage(cvContenido, offsetX, 0)
+  return rasterDeLienzo(cv)
+}
+
 // Envía a la M110 el trabajo de impresión de UN lienzo, replicando la secuencia
 // probada de phomymo/phomemo-tools: comandos separados CON pausas (clave para que
 // imprima). NO se manda ESC @ (0x1b 0x40): en la M110 estorba.
 async function secuenciaImpresion(cv, opc = {}) {
   const { velocidad, densidad, papel } = { ...DEFAULTS, ...opc }
-  const { bytesPorFila, alto, raster } = rasterDeLienzo(cv)
+  const { bytesPorFila, alto, raster } = rasterParaImpresora(cv)   // ancho del cabezal (48 bytes), contenido centrado
 
   await escribir(Uint8Array.of(0x1b, 0x4e, 0x0d, velocidad)); await sleep(30)  // velocidad (ESC N 0x0d)
   await escribir(Uint8Array.of(0x1b, 0x4e, 0x04, densidad));  await sleep(30)  // densidad (ESC N 0x04)
