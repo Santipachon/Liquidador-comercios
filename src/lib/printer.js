@@ -37,13 +37,10 @@ let uiDisc = null
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
-// Tamaño de cada write BLE (bytes). 20 = a prueba de TODO: cabe en el MTU mínimo
-// de BLE (23 B). En Windows el MTU a veces se queda diminuto, así que 20 garantiza
-// que ningún write supere MTU-3 → NUNCA dispara "Long Write" (prepared writes, que el
-// firmware de la M110 no soporta y que la dejaba congelada en "feeding"). Es lento
-// (muchos writes por etiqueta) pero fiable en cualquier equipo. Subir solo si se
-// confirma que el MTU real lo permite.
-const CHUNK = 20
+// Tamaño de cada write BLE (bytes). 128 = tamaño que la M110 SÍ acepta y por el que
+// los datos fluyen (con writeValueWithoutResponse). El solape ("already in progress")
+// se maneja reintentando el trozo (ver escribir), no bajando el tamaño.
+const CHUNK = 128
 // Máximo que esperamos por CADA write. En Windows la promesa del write a veces se
 // queda colgada (no resuelve). El timeout la convierte en error → el reintento de
 // imprimirEtiqueta reconecta y reenvía el trabajo completo (así el FOOTER no se pierde).
@@ -132,21 +129,35 @@ export function olvidar() {
 //   · Un Write Command (writeValueWithoutResponse) NUNCA se convierte en Long Write, y
 //     con trozos de 128 B cabe en un solo PDU → entrega íntegra.
 //   · La pausa de 20 ms evita desbordar el pequeño buffer RX de la impresora.
-async function escribir(bytes, chunk = CHUNK, pausa = 0) {
+// Escribe UN trozo, prefiriendo SIN respuesta (Write Command). La M110 deja fluir
+// los datos con sin-respuesta (con-respuesta se le cuelga sin devolver ACK). El
+// inconveniente de sin-respuesta en Windows es que la promesa "resuelve" antes de
+// que el paquete salga → el siguiente se solapa → "GATT operation already in progress".
+// Se resuelve reintentando el MISMO trozo tras una pausa, hasta que el stack drene.
+async function escribirTrozo(trozo, etiqueta) {
+  const sinResp = !!caracteristica.writeValueWithoutResponse
+  for (let intento = 0; intento < 10; intento++) {
+    if (!caracteristica) throw new Error('Se perdió la conexión con la impresora.')
+    try {
+      const w = sinResp ? caracteristica.writeValueWithoutResponse(trozo)
+        : (caracteristica.writeValueWithResponse ? caracteristica.writeValueWithResponse(trozo) : caracteristica.writeValue(trozo))
+      await conTimeout(w, WRITE_TIMEOUT_MS, etiqueta)
+      return
+    } catch (e) {
+      // "already in progress" = el stack aún está ocupado con el write anterior.
+      // Esperar y reintentar el MISMO trozo (no es un error real, es contención).
+      if (/in progress/i.test(String(e?.message || e)) && intento < 9) { await sleep(40); continue }
+      throw e
+    }
+  }
+}
+
+async function escribir(bytes, chunk = CHUNK, pausa = 15) {
   for (let i = 0; i < bytes.length; i += chunk) {
     if (!caracteristica) throw new Error('Se perdió la conexión con la impresora.')
-    // Copia a un ArrayBuffer propio de tamaño EXACTO (evita mandar bytes de más si
-    // 'bytes' es un subarray/vista sobre un buffer mayor).
-    const trozo = new Uint8Array(bytes.slice(i, i + chunk)).buffer
-    // CON respuesta: cada write espera el ACK de la impresora antes de mandar el
-    // siguiente → totalmente serializado, así que NUNCA da "GATT operation already in
-    // progress". Y con trozos de 20 B (≤ MTU-3) tampoco dispara Long Write → no se
-    // congela. Evita AMBOS errores. El timeout rescata si un write se cuelga en Windows.
-    const escritura = caracteristica.writeValueWithResponse
-      ? caracteristica.writeValueWithResponse(trozo)
-      : caracteristica.writeValue(trozo)
-    await conTimeout(escritura, WRITE_TIMEOUT_MS, `write@${i}`)
-    if (pausa) await sleep(pausa)
+    const trozo = new Uint8Array(bytes.slice(i, i + chunk)).buffer   // buffer de tamaño exacto
+    await escribirTrozo(trozo, `write@${i}`)
+    if (pausa) await sleep(pausa)   // reduce la frecuencia de solape
   }
 }
 
