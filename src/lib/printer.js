@@ -32,6 +32,15 @@ let uiDisc = null
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
+// Reintenta una operación BLE que puede fallar de forma transitoria ("GATT operation failed").
+async function conReintento(fn, veces = 3, espera = 300) {
+  let ultimo
+  for (let i = 0; i < veces; i++) {
+    try { return await fn() } catch (e) { ultimo = e; await sleep(espera) }
+  }
+  throw ultimo
+}
+
 // Se dispara cuando la impresora se desconecta (apagada / fuera de rango).
 function onDisc() { caracteristica = null; if (uiDisc) uiDisc() }
 // La UI registra aquí un callback para reflejar la desconexión pasiva en pantalla.
@@ -66,9 +75,10 @@ export async function conectar({ todos = false } = {}) {
 }
 
 async function abrirGatt() {
-  const server = await device.gatt.connect()
-  const service = await server.getPrimaryService(SERVICE)
-  caracteristica = await service.getCharacteristic(WRITE)
+  const server = await conReintento(() => device.gatt.connect())
+  await sleep(200)   // dar tiempo al stack BLE antes de descubrir servicios
+  const service = await conReintento(() => server.getPrimaryService(SERVICE))
+  caracteristica = await conReintento(() => service.getCharacteristic(WRITE))
 }
 
 // Reabre la conexión con la impresora YA emparejada, sin volver a mostrar el selector.
@@ -87,11 +97,7 @@ export function olvidar() {
 // ─── Escritura BLE troceada ───
 // BLE manda paquetes pequeños; si se envía todo de golpe la M110 pierde datos.
 // Se trocea y se deja un respiro entre paquetes.
-async function enviar(bytes) {
-  if (!conectada()) {
-    const ok = await reconectar()
-    if (!ok) throw new Error('La impresora no está conectada. Pulse "Conectar impresora".')
-  }
+async function escribirTrozos(bytes) {
   // Preferimos escritura CON respuesta: es portátil (fragmenta sola si el paquete
   // supera el MTU negociado —típico en PC— y controla el flujo por ACK). Solo caemos
   // a "sin respuesta" si la característica no admite la otra (según sus properties).
@@ -107,6 +113,25 @@ async function enviar(bytes) {
       await caracteristica.writeValueWithResponse(trozo)
     } else {
       await caracteristica.writeValue(trozo)
+    }
+  }
+}
+
+async function enviar(bytes) {
+  // Hasta 2 intentos: si el GATT se cae a mitad, reconecta y reenvía la etiqueta
+  // completa (el ESC @ inicial la resetea, así que reenviar es seguro).
+  for (let intento = 0; intento < 2; intento++) {
+    if (!conectada()) {
+      const ok = await reconectar()
+      if (!ok) throw new Error('La impresora no está conectada. Pulse "Conectar impresora".')
+    }
+    try {
+      await escribirTrozos(bytes)
+      return
+    } catch (e) {
+      if (intento === 1) throw e
+      caracteristica = null   // fuerza reconexión en el siguiente intento
+      await sleep(500)
     }
   }
 }
