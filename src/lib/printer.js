@@ -23,7 +23,7 @@ const PREFIJOS = ['M110', 'M120', 'M200', 'M220', 'M221', 'M02', 'T02', 'D30', '
 export const ETIQUETA = { anchoPx: 240, altoPx: 160 }
 
 // Parámetros de impresión por defecto (ajustables tras la prueba física)
-const DEFAULTS = { velocidad: 0x03, densidad: 0x08, papel: 0x0a } // papel 0x0a = etiquetas con separación (die-cut)
+const DEFAULTS = { velocidad: 0x05, densidad: 0x0a, papel: 0x0a } // papel 0x0a = etiquetas con separación (die-cut)
 
 // ─── Estado del módulo (una sola impresora emparejada por sesión) ───
 let device = null
@@ -94,45 +94,18 @@ export function olvidar() {
   caracteristica = null
 }
 
-// ─── Escritura BLE troceada ───
-// BLE manda paquetes pequeños; si se envía todo de golpe la M110 pierde datos.
-// Se trocea y se deja un respiro entre paquetes.
-async function escribirTrozos(bytes) {
-  // Preferimos escritura CON respuesta: es portátil (fragmenta sola si el paquete
-  // supera el MTU negociado —típico en PC— y controla el flujo por ACK). Solo caemos
-  // a "sin respuesta" si la característica no admite la otra (según sus properties).
+// ─── Escritura BLE ───
+// Escribe bytes a la característica en trozos, con una pausa entre cada uno.
+// La M110 NECESITA ese respiro para procesar; sin él "recibe pero no imprime".
+async function escribir(bytes, chunk = 128, pausa = 20) {
   const props = caracteristica.properties || {}
-  const sinRespuesta = !props.write && !!props.writeWithoutResponse
-  const CHUNK = 100
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    const trozo = bytes.slice(i, i + CHUNK)
-    if (sinRespuesta) {
-      await caracteristica.writeValueWithoutResponse(trozo)
-      await sleep(18)   // sin ACK: dar respiro para no perder datos
-    } else if (caracteristica.writeValueWithResponse) {
-      await caracteristica.writeValueWithResponse(trozo)
-    } else {
-      await caracteristica.writeValue(trozo)
-    }
-  }
-}
-
-async function enviar(bytes) {
-  // Hasta 2 intentos: si el GATT se cae a mitad, reconecta y reenvía la etiqueta
-  // completa (el ESC @ inicial la resetea, así que reenviar es seguro).
-  for (let intento = 0; intento < 2; intento++) {
-    if (!conectada()) {
-      const ok = await reconectar()
-      if (!ok) throw new Error('La impresora no está conectada. Pulse "Conectar impresora".')
-    }
-    try {
-      await escribirTrozos(bytes)
-      return
-    } catch (e) {
-      if (intento === 1) throw e
-      caracteristica = null   // fuerza reconexión en el siguiente intento
-      await sleep(500)
-    }
+  const sinRespuesta = !!props.writeWithoutResponse   // la M110 usa write-sin-respuesta + pausa (como phomymo)
+  for (let i = 0; i < bytes.length; i += chunk) {
+    const trozo = bytes.slice(i, i + chunk)
+    if (sinRespuesta) await caracteristica.writeValueWithoutResponse(trozo)
+    else if (caracteristica.writeValueWithResponse) await caracteristica.writeValueWithResponse(trozo)
+    else await caracteristica.writeValue(trozo)
+    await sleep(pausa)
   }
 }
 
@@ -226,9 +199,8 @@ function ajustarFuente(ctx, texto, maxAncho, maxPx, fam) {
   return px
 }
 
-// ─── Canvas → bytes ESC/POS (configuración + imagen raster + pie) ───
-function bytesDeLienzo(cv, opc = {}) {
-  const { velocidad, densidad, papel } = { ...DEFAULTS, ...opc }
+// ─── Canvas → raster 1-bit ───
+function rasterDeLienzo(cv) {
   const W = cv.width, H = cv.height
   const img = cv.getContext('2d').getImageData(0, 0, W, H)
   const bytesPorFila = Math.ceil(W / 8)   // robusto aunque el ancho no sea múltiplo de 8
@@ -248,46 +220,54 @@ function bytesDeLienzo(cv, opc = {}) {
       raster[y * bytesPorFila + xb] = b
     }
   }
-
-  const partes = []
-  // Cabecera / configuración de impresión
-  partes.push(Uint8Array.of(0x1b, 0x40))                    // ESC @  inicializar
-  partes.push(Uint8Array.of(0x1b, 0x4e, 0x0d, velocidad))   // velocidad de impresión
-  partes.push(Uint8Array.of(0x1b, 0x4e, 0x04, densidad))    // densidad (oscuridad)
-  partes.push(Uint8Array.of(0x1f, 0x11, papel))             // tipo de papel
-
-  // Imagen raster (GS v 0), en bandas (el buffer de la M110 ronda las ~240 líneas;
-  // usamos 200 como margen de seguridad — no cambia el resultado visual).
-  const MAX = 200
-  for (let y0 = 0; y0 < H; y0 += MAX) {
-    const alto = Math.min(MAX, H - y0)
-    partes.push(Uint8Array.of(
-      0x1d, 0x76, 0x30, 0x00,
-      bytesPorFila & 0xff, (bytesPorFila >> 8) & 0xff,
-      alto & 0xff, (alto >> 8) & 0xff,
-    ))
-    partes.push(raster.subarray(y0 * bytesPorFila, (y0 + alto) * bytesPorFila))
-  }
-
-  // Pie: avanzar el papel / finalizar
-  partes.push(Uint8Array.of(0x1f, 0xf0, 0x05, 0x00))
-  partes.push(Uint8Array.of(0x1f, 0xf0, 0x03, 0x00))
-
-  return concat(partes)
+  return { bytesPorFila, alto: H, raster }
 }
 
-function concat(arrs) {
-  const total = arrs.reduce((n, a) => n + a.length, 0)
-  const out = new Uint8Array(total)
-  let o = 0
-  for (const a of arrs) { out.set(a, o); o += a.length }
-  return out
+// Envía a la M110 el trabajo de impresión de UN lienzo, replicando la secuencia
+// probada de phomymo/phomemo-tools: comandos separados CON pausas (clave para que
+// imprima). NO se manda ESC @ (0x1b 0x40): en la M110 estorba.
+async function secuenciaImpresion(cv, opc = {}) {
+  const { velocidad, densidad, papel } = { ...DEFAULTS, ...opc }
+  const { bytesPorFila, alto, raster } = rasterDeLienzo(cv)
+
+  await escribir(Uint8Array.of(0x1b, 0x4e, 0x0d, velocidad)); await sleep(30)  // velocidad (ESC N 0x0d)
+  await escribir(Uint8Array.of(0x1b, 0x4e, 0x04, densidad));  await sleep(30)  // densidad (ESC N 0x04)
+  await escribir(Uint8Array.of(0x1f, 0x11, papel));           await sleep(30)  // tipo de papel (0x0a = con gap)
+
+  // Imagen raster (GS v 0), en bandas ≤200 líneas (margen bajo el límite de buffer ~240)
+  const MAX = 200
+  for (let y0 = 0; y0 < alto; y0 += MAX) {
+    const h = Math.min(MAX, alto - y0)
+    await escribir(Uint8Array.of(
+      0x1d, 0x76, 0x30, 0x00,
+      bytesPorFila & 0xff, (bytesPorFila >> 8) & 0xff,
+      h & 0xff, (h >> 8) & 0xff,
+    ))
+    await escribir(raster.subarray(y0 * bytesPorFila, (y0 + h) * bytesPorFila))
+  }
+
+  await sleep(300)   // dar tiempo a la M110 antes de finalizar
+  await escribir(Uint8Array.of(0x1f, 0xf0, 0x05, 0x00, 0x1f, 0xf0, 0x03, 0x00))  // pie: imprime y avanza
+  await sleep(500)
 }
 
 // ─── Impresión ───
-// Imprime UNA etiqueta a partir de sus datos.
+// Imprime UNA etiqueta. Hasta 2 intentos: si el GATT se cae, reconecta y reintenta
+// (el trabajo se reenvía completo, es seguro).
 export async function imprimirEtiqueta(datos, opc) {
-  await enviar(bytesDeLienzo(lienzoEtiqueta(datos), opc))
+  const cv = lienzoEtiqueta(datos)
+  for (let intento = 0; intento < 2; intento++) {
+    if (!conectada()) {
+      const ok = await reconectar()
+      if (!ok) throw new Error('La impresora no está conectada. Pulse "Conectar impresora".')
+    }
+    try { await secuenciaImpresion(cv, opc); return }
+    catch (e) {
+      if (intento === 1) throw e
+      caracteristica = null   // fuerza reconexión
+      await sleep(500)
+    }
+  }
 }
 
 // Convierte un renglón de factura (item) + datos de la factura en los datos de la etiqueta.
