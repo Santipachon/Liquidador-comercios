@@ -28,7 +28,7 @@ export const ETIQUETA = { anchoPx: 240, altoPx: 160 }
 const CABEZAL_BYTES = 48
 
 // Parámetros de impresión por defecto (ajustables tras la prueba física)
-const DEFAULTS = { velocidad: 0x05, densidad: 0x0a, papel: 0x0a } // papel 0x0a = etiquetas con separación (die-cut)
+const DEFAULTS = { velocidad: 0x05, densidad: 0x0c, papel: 0x0a } // papel 0x0a = etiquetas con separación (die-cut)
 
 // ─── Estado del módulo (una sola impresora emparejada por sesión) ───
 let device = null
@@ -102,13 +102,13 @@ export function olvidar() {
 // ─── Escritura BLE ───
 // Escribe bytes a la característica en trozos, con una pausa entre cada uno.
 // La M110 NECESITA ese respiro para procesar; sin él "recibe pero no imprime".
-async function escribir(bytes, chunk = 128, pausa = 15) {
+async function escribir(bytes, chunk = 512, pausa = 0) {
   for (let i = 0; i < bytes.length; i += chunk) {
     if (!caracteristica) throw new Error('Se perdió la conexión con la impresora.')
     const trozo = bytes.slice(i, i + chunk)
-    // CON respuesta: espera el ACK de la impresora antes de seguir → evita el error
-    // "GATT operation already in progress" y las caídas por saturar el buffer
-    // (write-sin-respuesta se solapa y es inestable en Windows).
+    // CON respuesta: espera el ACK de la impresora → se autorregula (sin "GATT operation
+    // already in progress") y garantiza la entrega. Paquetes grandes (512) y sin pausa
+    // para que el trabajo COMPLETO llegue rápido y la M110 no se congele esperando.
     if (caracteristica.writeValueWithResponse) await caracteristica.writeValueWithResponse(trozo)
     else await caracteristica.writeValue(trozo)
     if (pausa) await sleep(pausa)
