@@ -4,8 +4,17 @@ import { getFacturas, marcarImpreso, desmarcarImpreso } from '../lib/db'
 import { formatCOP, fechaCorta, provNombre } from '../lib/shared'
 import {
   soportado, soportadoSerial, conectar, conectarSerial, conectada, nombreImpresora, olvidar, alDesconectar, alRegistrar,
-  imprimirPrueba, imprimirFactura, vistaPrevia, etiquetaDeItem, contarEtiquetas,
+  imprimirPrueba, imprimirFactura, vistaPrevia, etiquetaDeItem, contarEtiquetas, estaImprimiendo, cancelarImpresion,
 } from '../lib/printer'
+
+// Traduce errores técnicos a algo que un empleado entienda y pueda accionar.
+function mensajeAmigable(e) {
+  const m = String(e?.message || e)
+  if (/en curso/i.test(m)) return m
+  if (/conexi|conectad|COM|GATT|desconect|perdió/i.test(m)) return 'Se perdió la conexión con la impresora. Vuelve a pulsar "Conectar por COM".'
+  if (/timeout/i.test(m)) return 'La impresora no respondió. Revisa que esté encendida y con papel, y reintenta.'
+  return 'Error al imprimir: ' + m
+}
 
 // Pantalla "Etiquetas por imprimir":
 //   1. Conectar la Phomemo M110 por Bluetooth (una vez).
@@ -25,6 +34,7 @@ export default function Impresion() {
   const [filtro, setFiltro] = useState('listas')
   const [aviso, setAviso] = useState('')
   const [logs, setLogs] = useState([])   // diagnóstico en pantalla
+  const [impGlobal, setImpGlobal] = useState(false)   // hay un trabajo de impresión en curso
 
   // Refleja en pantalla si la impresora se desconecta sola (apagada / fuera de rango).
   useEffect(() => {
@@ -89,32 +99,48 @@ export default function Impresion() {
   }
 
   async function prueba() {
-    setLogs([])
+    if (estaImprimiendo()) { alert('Ya hay una impresión en curso. Espera a que termine.'); return }
+    setLogs([]); setImpGlobal(true)
     try { await imprimirPrueba() }
-    catch (e) { alert(e?.message || 'Error al imprimir la prueba.'); setPrinter({ on: conectada(), nombre: nombreImpresora() }) }
+    catch (e) { alert(mensajeAmigable(e)); setPrinter({ on: conectada(), nombre: nombreImpresora() }) }
+    finally { setImpGlobal(false) }
   }
 
   async function imprimir(f) {
-    if (estado[f.id]?.imprimiendo) return                          // guardia anti doble-click
+    if (estaImprimiendo()) { alert('Ya hay una impresión en curso. Espera a que termine.'); return }  // lock global síncrono
     if (!printer.on) { alert('Primero conecte la impresora.'); return }
     if (!esLiquidada(f)) { alert('Esta factura aún no está liquidada: no tiene precios ni código. Liquídala primero en 🧾 Liquidar.'); return }
     const total = contarEtiquetas(f)                                // misma cuenta que imprimirá
     if (total === 0) { alert('Esta factura no tiene etiquetas para imprimir.'); return }
     if (total > 30 && !window.confirm(`Se imprimirán ${total} etiquetas de la factura ${f.numero}. ¿Continuar?`)) return
-    setLogs([])
+    setLogs([]); setImpGlobal(true)
     setEstado(s => ({ ...s, [f.id]: { imprimiendo: true, hechas: 0, total } }))
+    let res = null
     try {
-      const n = await imprimirFactura(f, {
-        onProgreso: (hechas, tot) => setEstado(s => ({ ...s, [f.id]: { imprimiendo: true, hechas, total: tot } })),
+      res = await imprimirFactura(f, {
+        onProgreso: (hechas, tot, item) => setEstado(s => ({ ...s, [f.id]: { imprimiendo: true, hechas, total: tot, prod: item?.nombre } })),
       })
-      marcarImpreso(f.id, usuario?.nombre)
-      setEstado(s => ({ ...s, [f.id]: { imprimiendo: false, hechas: n, total: n } }))
-      setAviso(`✅ ${n} etiqueta(s) enviadas a la impresora · factura ${f.numero}`)
-      refrescar()
     } catch (e) {
-      setEstado(s => ({ ...s, [f.id]: { imprimiendo: false, error: e?.message || 'Error de impresión' } }))
+      setEstado(s => ({ ...s, [f.id]: { imprimiendo: false, error: mensajeAmigable(e) } }))
       setPrinter({ on: conectada(), nombre: nombreImpresora() })
+      setImpGlobal(false)
+      return
     }
+    setImpGlobal(false)
+    setEstado(s => ({ ...s, [f.id]: { imprimiendo: false } }))
+    if (res?.cancelado) {
+      setAviso(`⏸ Cancelado en ${res.hechas} de ${res.total} etiquetas · factura ${f.numero}`)
+      refrescar(); return
+    }
+    // Confirmar que salieron bien ANTES de marcar impresa: el software no puede saber si
+    // se acabó el rollo o se atascó a mitad (los datos igual "salen" sin error).
+    const ok = window.confirm(
+      `Se enviaron ${res.total} etiqueta(s) de la factura ${f.numero}.\n\n` +
+      `¿Salieron TODAS bien?\n\nAceptar = marcar como impresa ✅\nCancelar = no marcar (podrás reimprimir)`
+    )
+    if (ok) { marcarImpreso(f.id, usuario?.nombre); setAviso(`✅ Factura ${f.numero} marcada como impresa (${res.total} etiquetas).`) }
+    else setAviso(`ℹ️ Factura ${f.numero} NO marcada. Puedes reimprimir cuando quieras.`)
+    refrescar()
   }
 
   function verEtiqueta(f) {
@@ -173,8 +199,8 @@ export default function Impresion() {
             </>
           ) : (
             <>
-              <button onClick={prueba} className="btn-plat border-[#1a6b3c] text-[#1a6b3c] hover:bg-[#1a6b3c] hover:text-white">🏷️ Imprimir prueba</button>
-              <button onClick={() => { olvidar(); setPrinter({ on: false, nombre: null }) }} className="text-[#777] font-mono text-xs hover:underline">Desconectar</button>
+              <button onClick={prueba} disabled={impGlobal} className="btn-plat border-[#1a6b3c] text-[#1a6b3c] hover:bg-[#1a6b3c] hover:text-white disabled:opacity-40">🏷️ Imprimir prueba</button>
+              <button onClick={() => { olvidar(); setPrinter({ on: false, nombre: null }) }} disabled={impGlobal} className="text-[#777] font-mono text-xs hover:underline disabled:opacity-40">Desconectar</button>
             </>
           )}
         </div>
@@ -231,13 +257,20 @@ export default function Impresion() {
 
                 <div className="flex items-center gap-2 flex-wrap">
                   {st.imprimiendo ? (
-                    <span className="font-mono text-sm text-[#2980b9]">Imprimiendo {st.hechas}/{st.total}…</span>
+                    <div className="flex items-center gap-3">
+                      <div className="min-w-[150px]">
+                        <div className="font-mono text-sm text-[#2980b9]">Imprimiendo {st.hechas}/{st.total}…</div>
+                        {st.prod && <div className="font-mono text-[10px] text-[#999] truncate max-w-[170px]">{st.prod}</div>}
+                        <div className="h-1.5 bg-[#e5e5e5] mt-1 w-40"><div className="h-full bg-[#2980b9]" style={{ width: `${st.total ? Math.round((st.hechas / st.total) * 100) : 0}%` }} /></div>
+                      </div>
+                      <button onClick={cancelarImpresion} className="btn-plat border-[#c0392b] text-[#c0392b] hover:bg-[#c0392b] hover:text-white text-sm py-1.5">✕ Cancelar</button>
+                    </div>
                   ) : (<>
                     <button onClick={() => verEtiqueta(f)} className="btn-plat border-[#8e44ad] text-[#8e44ad] hover:bg-[#8e44ad] hover:text-white text-sm py-1.5">👁 Ver</button>
                     {imp ? (
-                      <button onClick={() => { desmarcarImpreso(f.id); refrescar() }} className="text-[#777] font-mono text-xs hover:underline">Desmarcar</button>
+                      <button onClick={() => { desmarcarImpreso(f.id); refrescar() }} disabled={impGlobal} className="text-[#777] font-mono text-xs hover:underline disabled:opacity-40">Desmarcar</button>
                     ) : liq ? (
-                      <button onClick={() => imprimir(f)} disabled={!printer.on || nEti === 0}
+                      <button onClick={() => imprimir(f)} disabled={!printer.on || nEti === 0 || impGlobal}
                         title={nEti === 0 ? 'Esta factura no tiene etiquetas' : ''}
                         className="btn-plat border-[#1a6b3c] text-[#1a6b3c] hover:bg-[#1a6b3c] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed text-sm py-1.5">
                         🖨️ Imprimir {nEti}

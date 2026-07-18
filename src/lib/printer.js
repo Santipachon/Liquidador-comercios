@@ -40,14 +40,19 @@ let uiDisc = null
 let serialPort = null
 let serialWriter = null
 
+// Lock global: solo UN trabajo de impresión a la vez (dos a la vez mezclan bytes en la
+// misma impresora → etiquetas basura). Y bandera para cancelar un lote en curso.
+let imprimiendoAhora = false
+let cancelar = false
+export function estaImprimiendo() { return imprimiendoAhora }
+export function cancelarImpresion() { cancelar = true }
+
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
-// Tamaño de cada write BLE (bytes). 20 = cabe en el MTU mínimo (23) → un write CON
-// respuesta de este tamaño NUNCA se convierte en "Long Write" (que la M110 no soporta
-// y que la congelaba). Con-respuesta garantiza que los datos SALEN de verdad hacia la
-// impresora (sin-respuesta en Windows los deja en la cola local y no los transmite →
-// la impresora no recibe nada y no hace nada). Es lento pero fiable.
-const CHUNK = 20
+// Tamaño de cada write BLE (bytes) — SOLO aplica al camino BLE (Android). En Windows
+// se usa Web Serial (puerto COM), que escribe el flujo entero sin trocear. En Android
+// el MTU es alto, así que 128 es rápido y no dispara "Long Write".
+const CHUNK = 128
 // Máximo que esperamos por CADA write. En Windows la promesa del write a veces se
 // queda colgada (no resuelve). El timeout la convierte en error → el reintento de
 // imprimirEtiqueta reconecta y reenvía el trabajo completo (así el FOOTER no se pierde).
@@ -88,7 +93,8 @@ export function soportadoSerial() {
   return typeof navigator !== 'undefined' && !!navigator.serial
 }
 export function conectada() {
-  if (serialWriter) return true
+  // Serial: honesto — si el puerto se cayó, `writable` pasa a null (y limpiamos el writer).
+  if (serialPort || serialWriter) return !!(serialPort && serialPort.writable && serialWriter)
   return !!(device && device.gatt && device.gatt.connected && caracteristica)
 }
 export function nombreImpresora() {
@@ -105,10 +111,21 @@ export async function conectarSerial(baud = 128000) {
   if (!soportadoSerial()) {
     throw new Error('Este navegador no soporta Web Serial. Use Chrome o Edge en PC (Windows/Mac).')
   }
+  olvidar()   // cierra cualquier conexión previa (evita fugas de puerto/writer)
   const port = await navigator.serial.requestPort()   // el usuario elige el COM de la impresora
   await port.open({ baudRate: baud })
   serialPort = port
   serialWriter = port.writable.getWriter()
+  // Si el SO reporta que el puerto se desconectó (impresora apagada / fuera de rango),
+  // limpiar y avisar a la UI para que muestre de nuevo el botón de conectar.
+  const onSerialDisc = e => {
+    if (e.target && serialPort && e.target !== serialPort) return
+    try { serialWriter?.releaseLock() } catch { /* nada */ }
+    serialWriter = null; serialPort = null
+    navigator.serial.removeEventListener('disconnect', onSerialDisc)
+    if (uiDisc) uiDisc()
+  }
+  navigator.serial.addEventListener('disconnect', onSerialDisc)
   log('✅ conectado por puerto COM (Bluetooth SPP)')
   return 'Puerto COM (Bluetooth)'
 }
@@ -214,7 +231,17 @@ async function escribir(bytes, chunk = CHUNK, pausa = 0) {
   // Vía PUERTO COM (Web Serial): es un flujo serie, se escribe entero sin trocear ni
   // pacing — nada de los problemas de BLE. Camino confiable en Windows.
   if (serialWriter) {
-    await conTimeout(serialWriter.write(new Uint8Array(bytes)), WRITE_TIMEOUT_MS, 'serial')
+    // Timeout escalado por tamaño (un raster grande tarda más; no dispararlo por lento).
+    const limite = Math.max(WRITE_TIMEOUT_MS, bytes.length * 2)
+    try {
+      await conTimeout(serialWriter.write(new Uint8Array(bytes)), limite, 'serial')
+    } catch (e) {
+      // El puerto se cayó a mitad → limpiar para que la UI ofrezca reconectar.
+      try { serialWriter.releaseLock() } catch { /* nada */ }
+      serialWriter = null; serialPort = null
+      if (uiDisc) uiDisc()
+      throw new Error('Se perdió la conexión con la impresora (puerto COM).')
+    }
     return
   }
   // Vía BLE (Web Bluetooth): trozos pequeños con reintento ante 'ocupado'.
@@ -247,17 +274,19 @@ export function lienzoEtiqueta(datos) {
   ctx.font = '15px Arial, sans-serif'
   ctx.fillText(String(datos.fecha || ''), W - 6, 4)
 
-  // 2) Sigla del proveedor (derecha, bajo la fecha)
-  ctx.font = '24px Arial, sans-serif'
-  ctx.fillText(String(datos.sigla || ''), W - 6, 22)
+  // 2) Sigla del proveedor (derecha, bajo la fecha) — se auto-ajusta si es larga (MOTORK…)
+  const sig = String(datos.sigla || '')
+  ctx.font = `${ajustarFuente(ctx, sig, 120, 24, 'Arial, sans-serif')}px Arial, sans-serif`
+  ctx.fillText(sig, W - 6, 22)
 
-  // 3) Código REPUBLICAS — grande, a la izquierda (se auto-ajusta para caber)
+  // 3) Código REPUBLICAS — grande, en su propia franja BAJO la sigla (así no se solapan).
+  // Usa todo el ancho y baja a y=68; máx 44px → despeja la sigla (y≤44) y el nombre (y≥92).
   ctx.textAlign = 'left'
   ctx.textBaseline = 'middle'
   const cod = String(datos.codigo || '')
-  const codPx = ajustarFuente(ctx, cod, W - 54, 50, 'Arial, sans-serif')
+  const codPx = ajustarFuente(ctx, cod, W - 12, 44, 'Arial, sans-serif')
   ctx.font = `${codPx}px Arial, sans-serif`
-  ctx.fillText(cod, 6, 55)
+  ctx.fillText(cod, 6, 68)
 
   // 4) Nombre del producto (abajo, hasta 3 líneas)
   ctx.textBaseline = 'top'
@@ -295,12 +324,14 @@ function ajustarTexto(ctx, texto, maxAncho, maxLineas) {
     }
   }
   if (lineas.length < maxLineas) lineas.push(actual)
-  // Recorta con "…" la última línea si excede
-  const i = lineas.length - 1
-  if (i >= 0 && ctx.measureText(lineas[i]).width > maxAncho) {
-    let ult = lineas[i]
-    while (ult.length > 1 && ctx.measureText(ult + '…').width > maxAncho) ult = ult.slice(0, -1)
-    lineas[i] = ult + '…'
+  // Recorta con "…" CUALQUIER línea que exceda (una palabra larga sin espacios puede caer
+  // en línea 1 o 2 y saldría fuera del lienzo si solo trunca la última).
+  for (let j = 0; j < lineas.length; j++) {
+    if (ctx.measureText(lineas[j]).width > maxAncho) {
+      let u = lineas[j]
+      while (u.length > 1 && ctx.measureText(u + '…').width > maxAncho) u = u.slice(0, -1)
+      lineas[j] = u + '…'
+    }
   }
   return lineas
 }
@@ -309,7 +340,7 @@ function ajustarTexto(ctx, texto, maxAncho, maxLineas) {
 function ajustarFuente(ctx, texto, maxAncho, maxPx, fam) {
   let px = maxPx
   ctx.font = `${px}px ${fam}`
-  while (px > 10 && ctx.measureText(texto).width > maxAncho) {
+  while (px > 8 && ctx.measureText(texto).width > maxAncho) {   // baja hasta 8px (códigos de 8+ letras)
     px--
     ctx.font = `${px}px ${fam}`
   }
@@ -420,49 +451,75 @@ export async function imprimirEtiqueta(datos, opc) {
   }
 }
 
+// Código REPUBLICAS de un ítem. Vacío si no hay con qué (precio ≤ 0 y sin código guardado).
+export function codigoDeItem(it) {
+  if ((it.precio_venta ?? 0) > 0) return String(it.codigo_interno || numToLetras(it.precio_venta))
+  return it.codigo_interno ? String(it.codigo_interno) : ''
+}
+// Un ítem es imprimible solo si tiene precio de venta > 0 y un código válido
+// (evita etiquetas "gratis"/en blanco por precio 0/null).
+function itemImprimible(it) {
+  return (it.precio_venta ?? 0) > 0 && codigoDeItem(it) !== ''
+}
+
 // Convierte un renglón de factura (item) + datos de la factura en los datos de la etiqueta.
 export function etiquetaDeItem(it, factura) {
   return {
     nombre: it.nombre,
     sigla: factura.sigla || '',
-    codigo: it.codigo_interno || (it.precio_venta != null ? numToLetras(it.precio_venta) : ''),
+    codigo: codigoDeItem(it),
     precio: it.precio_venta != null ? formatCOP(it.precio_venta) : '',
     fecha: fechaCorta(factura.fecha),
   }
 }
 
-// nº de etiquetas de un ítem — MISMA regla en la cabecera, el botón y la impresión
-// (evita que el botón diga "Imprimir 0" y salgan N, o que se salte la confirmación).
+// nº de etiquetas de un ítem — MISMA regla en la cabecera, el botón y la impresión.
 export function nEtiquetasDeItem(it) {
   return Math.max(0, Math.round(it.etiquetas ?? it.cantidad ?? 0))
 }
+// Cuenta SOLO lo que realmente se imprimirá (ítems imprimibles) — así el botón y la
+// confirmación coinciden con lo que sale.
 export function contarEtiquetas(factura) {
-  return (factura.items || []).reduce((n, it) => n + nEtiquetasDeItem(it), 0)
+  return (factura.items || []).reduce((n, it) => n + (itemImprimible(it) ? nEtiquetasDeItem(it) : 0), 0)
 }
 
-// Imprime una factura completa: por cada producto repite su nº de "etiquetas".
-// onProgreso(hechas, total, item) permite mostrar una barra de progreso.
-export async function imprimirFactura(factura, { onProgreso, ...opc } = {}) {
-  const trabajos = []
-  for (const it of (factura.items || [])) {
-    for (let i = 0; i < nEtiquetasDeItem(it); i++) trabajos.push(it)
+// Imprime una factura completa. Devuelve { hechas, total, cancelado }.
+// onProgreso(hechas, total, item) para la barra; `desde` permite REANUDAR desde una etiqueta.
+export async function imprimirFactura(factura, { onProgreso, desde = 0, ...opc } = {}) {
+  if (imprimiendoAhora) throw new Error('Ya hay una impresión en curso. Espera a que termine.')
+  imprimiendoAhora = true; cancelar = false
+  try {
+    const trabajos = []
+    for (const it of (factura.items || [])) {
+      if (!itemImprimible(it)) continue   // omite ítems sin precio/código (no saca etiquetas en blanco)
+      for (let i = 0; i < nEtiquetasDeItem(it); i++) trabajos.push(it)
+    }
+    const total = trabajos.length
+    for (let i = desde; i < total; i++) {
+      if (cancelar) return { hechas: i, total, cancelado: true }
+      if (i > desde) await sleep(120)   // respiro entre etiquetas (avance del papel)
+      await imprimirEtiqueta(etiquetaDeItem(trabajos[i], factura), opc)
+      onProgreso?.(i + 1, total, trabajos[i])
+    }
+    return { hechas: total, total, cancelado: false }
+  } finally {
+    imprimiendoAhora = false
   }
-  const total = trabajos.length
-  for (let i = 0; i < total; i++) {
-    if (i > 0) await sleep(120)   // respiro entre etiquetas (avance del papel), no tras la última
-    await imprimirEtiqueta(etiquetaDeItem(trabajos[i], factura), opc)
-    onProgreso?.(i + 1, total, trabajos[i])
-  }
-  return total
 }
 
 // Etiqueta de PRUEBA para verificar el hardware sin depender de una factura.
 export async function imprimirPrueba(opc) {
-  await imprimirEtiqueta({
-    nombre: 'PRUEBA EL ACERO',
-    sigla: 'TEST',
-    codigo: 'EAAAS',
-    precio: formatCOP(29990),
-    fecha: fechaCorta(new Date().toISOString()),
-  }, opc)
+  if (imprimiendoAhora) throw new Error('Ya hay una impresión en curso. Espera a que termine.')
+  imprimiendoAhora = true; cancelar = false
+  try {
+    await imprimirEtiqueta({
+      nombre: 'PRUEBA EL ACERO',
+      sigla: 'TEST',
+      codigo: 'EAAAS',
+      precio: formatCOP(29990),
+      fecha: fechaCorta(new Date().toISOString()),
+    }, opc)
+  } finally {
+    imprimiendoAhora = false
+  }
 }
