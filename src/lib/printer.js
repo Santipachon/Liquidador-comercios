@@ -35,6 +35,10 @@ const DEFAULTS = { velocidad: 0x05, densidad: 0x0c, papel: 0x0a } // papel 0x0a 
 let device = null
 let caracteristica = null
 let uiDisc = null
+// Transporte alternativo: puerto COM por Bluetooth Clásico (SPP) usando Web Serial.
+// Es el camino CONFIABLE en Windows (el mismo del driver oficial); evita los bugs de BLE.
+let serialPort = null
+let serialWriter = null
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
@@ -80,11 +84,33 @@ function log(m) { try { onLog && onLog(m) } catch { /* nada */ } }
 export function soportado() {
   return typeof navigator !== 'undefined' && !!navigator.bluetooth
 }
+export function soportadoSerial() {
+  return typeof navigator !== 'undefined' && !!navigator.serial
+}
 export function conectada() {
+  if (serialWriter) return true
   return !!(device && device.gatt && device.gatt.connected && caracteristica)
 }
 export function nombreImpresora() {
+  if (serialWriter) return 'Puerto COM (Bluetooth)'
   return device?.name || null
+}
+
+// ─── Conexión por PUERTO COM (Web Serial, Bluetooth Clásico/SPP) ───
+// Camino CONFIABLE en Windows: la M110 emparejada expone "Standard Serial over
+// Bluetooth link (COMx)". Abrimos ese puerto y escribimos los mismos bytes ESC/POS,
+// sin ninguno de los problemas de BLE (Long Write, notify, LED). DEBE llamarse desde
+// un onClick (Web Serial exige gesto del usuario).
+export async function conectarSerial(baud = 128000) {
+  if (!soportadoSerial()) {
+    throw new Error('Este navegador no soporta Web Serial. Use Chrome o Edge en PC (Windows/Mac).')
+  }
+  const port = await navigator.serial.requestPort()   // el usuario elige el COM de la impresora
+  await port.open({ baudRate: baud })
+  serialPort = port
+  serialWriter = port.writable.getWriter()
+  log('✅ conectado por puerto COM (Bluetooth SPP)')
+  return 'Puerto COM (Bluetooth)'
 }
 
 // ─── Conexión ───
@@ -135,6 +161,11 @@ export async function reconectar() {
 }
 
 export function olvidar() {
+  if (serialWriter || serialPort) {
+    try { serialWriter?.releaseLock() } catch { /* nada */ }
+    try { serialPort?.close() } catch { /* nada */ }
+    serialWriter = null; serialPort = null
+  }
   try { device?.gatt?.disconnect() } catch { /* ya desconectada */ }
   device = null
   caracteristica = null
@@ -180,6 +211,13 @@ async function escribirTrozo(trozo, etiqueta) {
 }
 
 async function escribir(bytes, chunk = CHUNK, pausa = 0) {
+  // Vía PUERTO COM (Web Serial): es un flujo serie, se escribe entero sin trocear ni
+  // pacing — nada de los problemas de BLE. Camino confiable en Windows.
+  if (serialWriter) {
+    await conTimeout(serialWriter.write(new Uint8Array(bytes)), WRITE_TIMEOUT_MS, 'serial')
+    return
+  }
+  // Vía BLE (Web Bluetooth): trozos pequeños con reintento ante 'ocupado'.
   for (let i = 0; i < bytes.length; i += chunk) {
     if (!caracteristica) throw new Error('Se perdió la conexión con la impresora.')
     const trozo = new Uint8Array(bytes.slice(i, i + chunk)).buffer   // buffer de tamaño exacto

@@ -3,7 +3,7 @@ import { useOutletContext } from 'react-router-dom'
 import { getFacturas, marcarImpreso, desmarcarImpreso } from '../lib/db'
 import { formatCOP, fechaCorta, provNombre } from '../lib/shared'
 import {
-  soportado, conectar, conectada, nombreImpresora, olvidar, alDesconectar, alRegistrar,
+  soportado, soportadoSerial, conectar, conectarSerial, conectada, nombreImpresora, olvidar, alDesconectar, alRegistrar,
   imprimirPrueba, imprimirFactura, vistaPrevia, etiquetaDeItem, contarEtiquetas,
 } from '../lib/printer'
 
@@ -76,6 +76,18 @@ export default function Impresion() {
     } finally { setConectando(false) }
   }
 
+  // Conexión por puerto COM (Web Serial) — la vía confiable en Windows.
+  async function conectarCom() {
+    setConectando(true)
+    try {
+      const nombre = await conectarSerial()
+      setPrinter({ on: true, nombre })
+    } catch (e) {
+      if (e?.name !== 'NotFoundError') alert(e?.message || 'No se pudo abrir el puerto COM.')
+      setPrinter({ on: conectada(), nombre: nombreImpresora() })
+    } finally { setConectando(false) }
+  }
+
   async function prueba() {
     setLogs([])
     try { await imprimirPrueba() }
@@ -142,15 +154,23 @@ export default function Impresion() {
           <span className={`inline-block w-3 h-3 rounded-full ${printer.on ? 'bg-[#1a6b3c]' : 'bg-[#c0392b]'}`} />
           <div>
             <p className="font-bold font-mono">{printer.on ? 'Impresora conectada' : 'Impresora desconectada'}</p>
-            <p className="text-xs text-[#777] font-mono">{printer.on ? (printer.nombre || 'Phomemo') : 'Pulse "Conectar impresora" y elija su impresora de la lista'}</p>
+            <p className="text-xs text-[#777] font-mono">{printer.on ? (printer.nombre || 'Phomemo') : 'En Windows: "Conectar por COM" y elija el puerto de la impresora'}</p>
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {!printer.on ? (
-            <button disabled={!compatible || conectando} onClick={() => conectarImpresora(true)}
-              className="btn-plat border-[#2980b9] text-[#2980b9] hover:bg-[#2980b9] hover:text-white disabled:opacity-40">
-              {conectando ? 'Buscando…' : '🔌 Conectar impresora'}
-            </button>
+            <>
+              <button disabled={!soportadoSerial() || conectando} onClick={conectarCom}
+                className="btn-plat border-[#1a6b3c] text-[#1a6b3c] hover:bg-[#1a6b3c] hover:text-white disabled:opacity-40"
+                title="Windows: elija 'Standard Serial over Bluetooth link (COMx)'">
+                {conectando ? 'Conectando…' : '💻 Conectar por COM (Windows)'}
+              </button>
+              <button disabled={!compatible || conectando} onClick={() => conectarImpresora(true)}
+                className="text-[#2980b9] font-mono text-xs hover:underline disabled:opacity-40"
+                title="Bluetooth directo (ideal en Android)">
+                o por Bluetooth (Android)
+              </button>
+            </>
           ) : (
             <>
               <button onClick={prueba} className="btn-plat border-[#1a6b3c] text-[#1a6b3c] hover:bg-[#1a6b3c] hover:text-white">🏷️ Imprimir prueba</button>
