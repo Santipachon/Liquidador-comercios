@@ -68,6 +68,12 @@ function onDisc() { caracteristica = null; if (uiDisc) uiDisc() }
 // La UI registra aquí un callback para reflejar la desconexión pasiva en pantalla.
 export function alDesconectar(cb) { uiDisc = cb }
 
+// ─── Log de diagnóstico (para ver EN PANTALLA qué pasa al imprimir, sin F12) ───
+let onLog = null
+let reintentosOcupado = 0
+export function alRegistrar(cb) { onLog = cb }
+function log(m) { try { onLog && onLog(m) } catch { /* nada */ } }
+
 export function soportado() {
   return typeof navigator !== 'undefined' && !!navigator.bluetooth
 }
@@ -146,7 +152,7 @@ async function escribirTrozo(trozo, etiqueta) {
     } catch (e) {
       // "already in progress" = el stack aún está ocupado con el write anterior.
       // Esperar y reintentar el MISMO trozo (no es un error real, es contención).
-      if (/in progress/i.test(String(e?.message || e)) && intento < 9) { await sleep(40); continue }
+      if (/in progress/i.test(String(e?.message || e)) && intento < 9) { reintentosOcupado++; await sleep(40); continue }
       throw e
     }
   }
@@ -296,13 +302,16 @@ function rasterParaImpresora(cvContenido) {
 // imprima). NO se manda ESC @ (0x1b 0x40): en la M110 estorba.
 async function secuenciaImpresion(cv, opc = {}) {
   const { velocidad, densidad, papel } = { ...DEFAULTS, ...opc }
-  const { bytesPorFila, alto, raster } = rasterParaImpresora(cv)   // ancho del cabezal (48 bytes), contenido centrado
+  const { bytesPorFila, alto, raster } = rasterParaImpresora(cv)   // ancho del cabezal (48 bytes)
+  reintentosOcupado = 0
 
+  log(`config (vel=${velocidad} dens=${densidad} papel=0x${papel.toString(16)})`)
   await escribir(Uint8Array.of(0x1b, 0x4e, 0x0d, velocidad)); await sleep(30)  // velocidad (ESC N 0x0d)
   await escribir(Uint8Array.of(0x1b, 0x4e, 0x04, densidad));  await sleep(30)  // densidad (ESC N 0x04)
   await escribir(Uint8Array.of(0x1f, 0x11, papel));           await sleep(30)  // tipo de papel (0x0a = con gap)
 
   // Imagen raster (GS v 0), en bandas ≤200 líneas (margen bajo el límite de buffer ~240)
+  log(`enviando imagen: ${bytesPorFila}B x ${alto} lineas = ${bytesPorFila * alto} bytes (trozos de ${CHUNK})`)
   const MAX = 200
   for (let y0 = 0; y0 < alto; y0 += MAX) {
     const h = Math.min(MAX, alto - y0)
@@ -313,9 +322,11 @@ async function secuenciaImpresion(cv, opc = {}) {
     ))
     await escribir(raster.subarray(y0 * bytesPorFila, (y0 + h) * bytesPorFila))
   }
+  log(`imagen enviada (${reintentosOcupado} reintentos por 'ocupado')`)
 
   await sleep(300)   // dar tiempo a la M110 antes de finalizar
   await escribir(Uint8Array.of(0x1f, 0xf0, 0x05, 0x00, 0x1f, 0xf0, 0x03, 0x00))  // pie: imprime y avanza
+  log('footer enviado')
   await sleep(500)
 }
 
@@ -326,11 +337,17 @@ export async function imprimirEtiqueta(datos, opc) {
   const cv = lienzoEtiqueta(datos)
   for (let intento = 0; intento < 3; intento++) {
     if (!conectada()) {
+      log('reconectando…')
       const ok = await reconectar()
       if (!ok) throw new Error('La impresora no está conectada. Pulse "Conectar impresora".')
     }
-    try { await secuenciaImpresion(cv, opc); return }
-    catch (e) {
+    try {
+      log(`▶ imprimiendo (intento ${intento + 1}/3)`)
+      await secuenciaImpresion(cv, opc)
+      log('✔ etiqueta enviada a la impresora')
+      return
+    } catch (e) {
+      log('✖ error: ' + (e?.message || e))
       if (intento === 2) throw e
       caracteristica = null   // fuerza reconexión
       await sleep(500)

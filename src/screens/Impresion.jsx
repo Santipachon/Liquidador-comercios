@@ -3,7 +3,7 @@ import { useOutletContext } from 'react-router-dom'
 import { getFacturas, marcarImpreso, desmarcarImpreso } from '../lib/db'
 import { formatCOP, fechaCorta, provNombre } from '../lib/shared'
 import {
-  soportado, conectar, conectada, nombreImpresora, olvidar, alDesconectar,
+  soportado, conectar, conectada, nombreImpresora, olvidar, alDesconectar, alRegistrar,
   imprimirPrueba, imprimirFactura, vistaPrevia, etiquetaDeItem, contarEtiquetas,
 } from '../lib/printer'
 
@@ -24,11 +24,18 @@ export default function Impresion() {
   const [preview, setPreview] = useState(null) // { src, titulo }
   const [filtro, setFiltro] = useState('listas')
   const [aviso, setAviso] = useState('')
+  const [logs, setLogs] = useState([])   // diagnóstico en pantalla
 
   // Refleja en pantalla si la impresora se desconecta sola (apagada / fuera de rango).
   useEffect(() => {
     alDesconectar(() => setPrinter({ on: false, nombre: null }))
     return () => alDesconectar(null)
+  }, [])
+
+  // Captura el log de diagnóstico del módulo de impresión.
+  useEffect(() => {
+    alRegistrar(m => setLogs(l => [...l.slice(-49), `${new Date().toLocaleTimeString()}  ${m}`]))
+    return () => alRegistrar(null)
   }, [])
 
   // El aviso de éxito se borra solo a los 5 s.
@@ -70,6 +77,7 @@ export default function Impresion() {
   }
 
   async function prueba() {
+    setLogs([])
     try { await imprimirPrueba() }
     catch (e) { alert(e?.message || 'Error al imprimir la prueba.'); setPrinter({ on: conectada(), nombre: nombreImpresora() }) }
   }
@@ -81,6 +89,7 @@ export default function Impresion() {
     const total = contarEtiquetas(f)                                // misma cuenta que imprimirá
     if (total === 0) { alert('Esta factura no tiene etiquetas para imprimir.'); return }
     if (total > 30 && !window.confirm(`Se imprimirán ${total} etiquetas de la factura ${f.numero}. ¿Continuar?`)) return
+    setLogs([])
     setEstado(s => ({ ...s, [f.id]: { imprimiendo: true, hechas: 0, total } }))
     try {
       const n = await imprimirFactura(f, {
@@ -150,6 +159,20 @@ export default function Impresion() {
           )}
         </div>
       </div>
+
+      {/* Panel de diagnóstico — muestra paso a paso qué pasa al imprimir */}
+      {logs.length > 0 && (
+        <div className="pcard">
+          <div className="flex items-center justify-between mb-2">
+            <p className="font-bold font-mono text-sm">🔎 Diagnóstico de impresión</p>
+            <div className="flex gap-2">
+              <button onClick={() => { navigator.clipboard?.writeText(logs.join('\n')); setAviso('Diagnóstico copiado') }} className="text-[#2980b9] font-mono text-xs hover:underline">Copiar</button>
+              <button onClick={() => setLogs([])} className="text-[#777] font-mono text-xs hover:underline">Limpiar</button>
+            </div>
+          </div>
+          <pre className="bg-[#1e1e1e] text-[#d4d4d4] text-[11px] leading-relaxed font-mono p-3 overflow-auto max-h-56 whitespace-pre-wrap">{logs.join('\n')}</pre>
+        </div>
+      )}
 
       {/* Filtros */}
       <div className="flex gap-2 font-mono text-sm">
