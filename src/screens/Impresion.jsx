@@ -4,8 +4,9 @@ import { getFacturas, marcarImpreso, desmarcarImpreso } from '../lib/db'
 import { formatCOP, fechaCorta, provNombre } from '../lib/shared'
 import {
   soportado, soportadoSerial, conectar, conectarSerial, conectada, nombreImpresora, olvidar, alDesconectar, alRegistrar,
-  imprimirPrueba, imprimirFactura, vistaPrevia, etiquetaDeItem, contarEtiquetas, estaImprimiendo, cancelarImpresion,
+  imprimirPrueba, vistaPrevia, etiquetaDeItem, contarEtiquetas, estaImprimiendo,
 } from '../lib/printer'
+import DetalleImpresion from './DetalleImpresion'
 
 // Traduce errores técnicos a algo que un empleado entienda y pueda accionar.
 function mensajeAmigable(e) {
@@ -29,7 +30,7 @@ export default function Impresion() {
   const compatible = soportado()
   const [printer, setPrinter] = useState({ on: conectada(), nombre: nombreImpresora() })
   const [conectando, setConectando] = useState(false)
-  const [estado, setEstado] = useState({})    // { [facturaId]: { imprimiendo, hechas, total, error } }
+  const [abierta, setAbierta] = useState(null) // factura abierta en el detalle de impresión
   const [preview, setPreview] = useState(null) // { src, titulo }
   const [filtro, setFiltro] = useState('listas')
   const [aviso, setAviso] = useState('')
@@ -106,40 +107,18 @@ export default function Impresion() {
     finally { setImpGlobal(false) }
   }
 
-  async function imprimir(f) {
-    if (estaImprimiendo()) { alert('Ya hay una impresión en curso. Espera a que termine.'); return }  // lock global síncrono
-    if (!printer.on) { alert('Primero conecte la impresora.'); return }
+  // Abre el detalle de impresión de una factura (imprimir por producto, en el orden que se desee).
+  function abrirDetalle(f) {
     if (!esLiquidada(f)) { alert('Esta factura aún no está liquidada: no tiene precios ni código. Liquídala primero en 🧾 Liquidar.'); return }
-    const total = contarEtiquetas(f)                                // misma cuenta que imprimirá
-    if (total === 0) { alert('Esta factura no tiene etiquetas para imprimir.'); return }
-    if (total > 30 && !window.confirm(`Se imprimirán ${total} etiquetas de la factura ${f.numero}. ¿Continuar?`)) return
-    setLogs([]); setImpGlobal(true)
-    setEstado(s => ({ ...s, [f.id]: { imprimiendo: true, hechas: 0, total } }))
-    let res = null
-    try {
-      res = await imprimirFactura(f, {
-        onProgreso: (hechas, tot, item) => setEstado(s => ({ ...s, [f.id]: { imprimiendo: true, hechas, total: tot, prod: item?.nombre } })),
-      })
-    } catch (e) {
-      setEstado(s => ({ ...s, [f.id]: { imprimiendo: false, error: mensajeAmigable(e) } }))
-      setPrinter({ on: conectada(), nombre: nombreImpresora() })
-      setImpGlobal(false)
-      return
-    }
-    setImpGlobal(false)
-    setEstado(s => ({ ...s, [f.id]: { imprimiendo: false } }))
-    if (res?.cancelado) {
-      setAviso(`⏸ Cancelado en ${res.hechas} de ${res.total} etiquetas · factura ${f.numero}`)
-      refrescar(); return
-    }
-    // Confirmar que salieron bien ANTES de marcar impresa: el software no puede saber si
-    // se acabó el rollo o se atascó a mitad (los datos igual "salen" sin error).
-    const ok = window.confirm(
-      `Se enviaron ${res.total} etiqueta(s) de la factura ${f.numero}.\n\n` +
-      `¿Salieron TODAS bien?\n\nAceptar = marcar como impresa ✅\nCancelar = no marcar (podrás reimprimir)`
-    )
-    if (ok) { marcarImpreso(f.id, usuario?.nombre); setAviso(`✅ Factura ${f.numero} marcada como impresa (${res.total} etiquetas).`) }
-    else setAviso(`ℹ️ Factura ${f.numero} NO marcada. Puedes reimprimir cuando quieras.`)
+    if (contarEtiquetas(f) === 0) { alert('Esta factura no tiene etiquetas para imprimir.'); return }
+    setAbierta(f)
+  }
+
+  // Al marcar la factura como impresa desde el detalle.
+  function facturaImpresa(f) {
+    marcarImpreso(f.id, usuario?.nombre)
+    setAviso(`✅ Factura ${f.numero} marcada como impresa.`)
+    setAbierta(null)
     refrescar()
   }
 
@@ -220,71 +199,63 @@ export default function Impresion() {
         </div>
       )}
 
-      {/* Filtros */}
-      <div className="flex gap-2 font-mono text-sm">
-        {[['listas', `Listas (${nListas})`], ['impresas', `Ya impresas (${nImp})`], ['faltan', `Faltan liquidar (${nFaltan})`]].map(([k, txt]) => (
-          <button key={k} onClick={() => setFiltro(k)}
-            className={`px-3 py-1.5 border-2 ${filtro === k ? 'bg-[#33302b] text-white border-[#33302b]' : 'border-[#d8d4cc] text-[#555] hover:border-[#33302b]'}`}>
-            {txt}
-          </button>
-        ))}
-      </div>
+      {abierta ? (
+        <DetalleImpresion factura={abierta} printerOn={printer.on}
+          onVolver={() => setAbierta(null)}
+          onFacturaImpresa={() => facturaImpresa(abierta)} />
+      ) : (<>
+        {/* Filtros */}
+        <div className="flex gap-2 font-mono text-sm">
+          {[['listas', `Listas (${nListas})`], ['impresas', `Ya impresas (${nImp})`], ['faltan', `Faltan liquidar (${nFaltan})`]].map(([k, txt]) => (
+            <button key={k} onClick={() => setFiltro(k)}
+              className={`px-3 py-1.5 border-2 ${filtro === k ? 'bg-[#33302b] text-white border-[#33302b]' : 'border-[#d8d4cc] text-[#555] hover:border-[#33302b]'}`}>
+              {txt}
+            </button>
+          ))}
+        </div>
 
-      {/* Lista de facturas */}
-      {lista.length === 0 ? (
-        <div className="pcard text-center py-10"><p className="text-[#666]">
-          {filtro === 'listas' ? '🎉 No hay facturas liquidadas por imprimir.' : filtro === 'faltan' ? 'No hay facturas pendientes por liquidar.' : 'Aún no has impreso ninguna.'}
-        </p></div>
-      ) : (
-        <div className="space-y-3">
-          {lista.map(f => {
-            const st = estado[f.id] || {}
-            const imp = !!f.impresoAt
-            const liq = esLiquidada(f)
-            const nEti = contarEtiquetas(f)
-            return (
-              <div key={f.id} className={`pcard flex items-center justify-between flex-wrap gap-3 ${imp ? 'opacity-60' : ''}`}>
-                <div className="min-w-0">
-                  <p className={`font-bold font-mono ${imp ? 'line-through text-[#888]' : ''}`}>
-                    {f.numero} <span className="text-[#999] font-normal">· {f.sigla} {provNombre(f.sigla)}</span>
-                  </p>
-                  <p className="text-xs text-[#777] font-mono mt-0.5">
-                    {fechaCorta(f.fecha)} · {f.num_productos} productos{liq ? <> · <b>{nEti} etiquetas</b> · venta {formatCOP(f.venta)}</> : ' · sin precio/código'}
-                  </p>
-                  {imp && <p className="text-xs text-[#1a6b3c] font-mono mt-1">✅ Impresa{f.impresoPor ? ` por ${f.impresoPor}` : ''} · {fechaCorta(f.impresoAt)}</p>}
-                  {st.error && <p className="text-xs text-[#c0392b] font-mono mt-1">⚠️ {st.error}</p>}
-                </div>
-
-                <div className="flex items-center gap-2 flex-wrap">
-                  {st.imprimiendo ? (
-                    <div className="flex items-center gap-3">
-                      <div className="min-w-[150px]">
-                        <div className="font-mono text-sm text-[#2980b9]">Imprimiendo {st.hechas}/{st.total}…</div>
-                        {st.prod && <div className="font-mono text-[10px] text-[#999] truncate max-w-[170px]">{st.prod}</div>}
-                        <div className="h-1.5 bg-[#e5e5e5] mt-1 w-40"><div className="h-full bg-[#2980b9]" style={{ width: `${st.total ? Math.round((st.hechas / st.total) * 100) : 0}%` }} /></div>
-                      </div>
-                      <button onClick={cancelarImpresion} className="btn-plat border-[#c0392b] text-[#c0392b] hover:bg-[#c0392b] hover:text-white text-sm py-1.5">✕ Cancelar</button>
-                    </div>
-                  ) : (<>
+        {/* Lista de facturas */}
+        {lista.length === 0 ? (
+          <div className="pcard text-center py-10"><p className="text-[#666]">
+            {filtro === 'listas' ? '🎉 No hay facturas liquidadas por imprimir.' : filtro === 'faltan' ? 'No hay facturas pendientes por liquidar.' : 'Aún no has impreso ninguna.'}
+          </p></div>
+        ) : (
+          <div className="space-y-3">
+            {lista.map(f => {
+              const imp = !!f.impresoAt
+              const liq = esLiquidada(f)
+              const nEti = contarEtiquetas(f)
+              return (
+                <div key={f.id} className={`pcard flex items-center justify-between flex-wrap gap-3 ${imp ? 'opacity-60' : ''}`}>
+                  <div className="min-w-0">
+                    <p className={`font-bold font-mono ${imp ? 'line-through text-[#888]' : ''}`}>
+                      {f.numero} <span className="text-[#999] font-normal">· {f.sigla} {provNombre(f.sigla)}</span>
+                    </p>
+                    <p className="text-xs text-[#777] font-mono mt-0.5">
+                      {fechaCorta(f.fecha)} · {f.num_productos} productos{liq ? <> · <b>{nEti} etiquetas</b> · venta {formatCOP(f.venta)}</> : ' · sin precio/código'}
+                    </p>
+                    {imp && <p className="text-xs text-[#1a6b3c] font-mono mt-1">✅ Impresa{f.impresoPor ? ` por ${f.impresoPor}` : ''} · {fechaCorta(f.impresoAt)}</p>}
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
                     <button onClick={() => verEtiqueta(f)} className="btn-plat border-[#8e44ad] text-[#8e44ad] hover:bg-[#8e44ad] hover:text-white text-sm py-1.5">👁 Ver</button>
                     {imp ? (
-                      <button onClick={() => { desmarcarImpreso(f.id); refrescar() }} disabled={impGlobal} className="text-[#777] font-mono text-xs hover:underline disabled:opacity-40">Desmarcar</button>
+                      <button onClick={() => { desmarcarImpreso(f.id); refrescar() }} className="text-[#777] font-mono text-xs hover:underline">Desmarcar</button>
                     ) : liq ? (
-                      <button onClick={() => imprimir(f)} disabled={!printer.on || nEti === 0 || impGlobal}
-                        title={nEti === 0 ? 'Esta factura no tiene etiquetas' : ''}
+                      <button onClick={() => abrirDetalle(f)} disabled={nEti === 0}
+                        title={nEti === 0 ? 'Esta factura no tiene etiquetas' : 'Abrir para imprimir por producto'}
                         className="btn-plat border-[#1a6b3c] text-[#1a6b3c] hover:bg-[#1a6b3c] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed text-sm py-1.5">
                         🖨️ Imprimir {nEti}
                       </button>
                     ) : (
                       <span className="font-mono text-xs text-[#b45309] bg-[#fef3c7] border border-[#fde68a] px-2 py-1" title="Falta ponerle margen/precio en 🧾 Liquidar">⚠ Falta liquidar</span>
                     )}
-                  </>)}
+                  </div>
                 </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
+              )
+            })}
+          </div>
+        )}
+      </>)}
 
       {/* Vista previa de la etiqueta */}
       {preview && (

@@ -461,6 +461,7 @@ export function codigoDeItem(it) {
 function itemImprimible(it) {
   return (it.precio_venta ?? 0) > 0 && codigoDeItem(it) !== ''
 }
+export function esImprimible(it) { return itemImprimible(it) }
 
 // Convierte un renglón de factura (item) + datos de la factura en los datos de la etiqueta.
 export function etiquetaDeItem(it, factura) {
@@ -502,6 +503,34 @@ export async function imprimirFactura(factura, { onProgreso, desde = 0, ...opc }
       onProgreso?.(i + 1, total, trabajos[i])
     }
     return { hechas: total, total, cancelado: false }
+  } finally {
+    imprimiendoAhora = false
+  }
+}
+
+// Imprime una LISTA de productos EN ORDEN (para el detalle de impresión personalizada).
+// productos = [{ it, etiquetas }]. Callbacks:
+//   onEtiqueta(hechas, total, item)  → progreso fino (etiquetas)
+//   onProductoListo(indiceEnLista)   → tras terminar cada producto (la UI lo tacha/acumula)
+// Devuelve { cancelado, hechas, total }. Respeta el lock global y el boton Cancelar.
+export async function imprimirProductos(factura, productos, { onEtiqueta, onProductoListo } = {}) {
+  if (imprimiendoAhora) throw new Error('Ya hay una impresión en curso. Espera a que termine.')
+  imprimiendoAhora = true; cancelar = false
+  try {
+    const total = productos.reduce((n, p) => n + Math.max(0, Math.round(p.etiquetas || 0)), 0)
+    let hechas = 0
+    for (let pi = 0; pi < productos.length; pi++) {
+      const n = Math.max(0, Math.round(productos[pi].etiquetas || 0))
+      for (let k = 0; k < n; k++) {
+        if (cancelar) return { cancelado: true, hechas, total }
+        if (hechas > 0) await sleep(120)
+        await imprimirEtiqueta(etiquetaDeItem(productos[pi].it, factura))
+        hechas++
+        onEtiqueta?.(hechas, total, productos[pi].it)
+      }
+      onProductoListo?.(pi)   // producto terminado → la UI lo marca ✓
+    }
+    return { cancelado: false, hechas, total }
   } finally {
     imprimiendoAhora = false
   }
