@@ -39,6 +39,7 @@ let uiDisc = null
 // Es el camino CONFIABLE en Windows (el mismo del driver oficial); evita los bugs de BLE.
 let serialPort = null
 let serialWriter = null
+let demo = false   // modo demo: simula la impresión (sin impresora real) para revisar la interfaz
 
 // Lock global: solo UN trabajo de impresión a la vez (dos a la vez mezclan bytes en la
 // misma impresora → etiquetas basura). Y bandera para cancelar un lote en curso.
@@ -93,13 +94,22 @@ export function soportadoSerial() {
   return typeof navigator !== 'undefined' && !!navigator.serial
 }
 export function conectada() {
+  if (demo) return true
   // Serial: honesto — si el puerto se cayó, `writable` pasa a null (y limpiamos el writer).
   if (serialPort || serialWriter) return !!(serialPort && serialPort.writable && serialWriter)
   return !!(device && device.gatt && device.gatt.connected && caracteristica)
 }
 export function nombreImpresora() {
+  if (demo) return 'Modo demo (sin impresora)'
   if (serialWriter) return 'Puerto COM (Bluetooth)'
   return device?.name || null
+}
+
+// Activa el modo demo: la impresión se SIMULA (no sale papel). Para revisar la interfaz.
+export function conectarDemo() {
+  demo = true
+  log('🧪 Modo demo activado — la impresión se simula (no hay impresora real).')
+  return 'Modo demo (sin impresora)'
 }
 
 // ─── Conexión por PUERTO COM (Web Serial, Bluetooth Clásico/SPP) ───
@@ -178,6 +188,7 @@ export async function reconectar() {
 }
 
 export function olvidar() {
+  demo = false
   if (serialWriter || serialPort) {
     try { serialWriter?.releaseLock() } catch { /* nada */ }
     try { serialPort?.close() } catch { /* nada */ }
@@ -228,6 +239,8 @@ async function escribirTrozo(trozo, etiqueta) {
 }
 
 async function escribir(bytes, chunk = CHUNK, pausa = 0) {
+  // Modo demo: no escribe a hardware, solo simula un pequeño retraso para ver el progreso.
+  if (demo) { await sleep(6); return }
   // Vía PUERTO COM (Web Serial): es un flujo serie, se escribe entero sin trocear ni
   // pacing — nada de los problemas de BLE. Camino confiable en Windows.
   if (serialWriter) {

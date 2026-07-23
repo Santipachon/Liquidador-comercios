@@ -3,7 +3,7 @@ import { useOutletContext } from 'react-router-dom'
 import { getFacturas, marcarImpreso, desmarcarImpreso } from '../lib/db'
 import { formatCOP, fechaCorta, provNombre } from '../lib/shared'
 import {
-  soportado, soportadoSerial, conectar, conectarSerial, conectada, nombreImpresora, olvidar, alDesconectar, alRegistrar,
+  soportado, soportadoSerial, conectar, conectarSerial, conectarDemo, conectada, nombreImpresora, olvidar, alDesconectar, alRegistrar,
   imprimirPrueba, vistaPrevia, etiquetaDeItem, contarEtiquetas, estaImprimiendo,
 } from '../lib/printer'
 import DetalleImpresion from './DetalleImpresion'
@@ -99,6 +99,13 @@ export default function Impresion() {
     } finally { setConectando(false) }
   }
 
+  // Modo demo: "conecta" una impresora simulada para revisar la interfaz sin hardware.
+  function modoDemo() {
+    setLogs([])
+    setPrinter({ on: true, nombre: conectarDemo() })
+    setAviso('🧪 Modo demo activado: la impresión se SIMULA (no sale papel real).')
+  }
+
   async function prueba() {
     if (estaImprimiendo()) { alert('Ya hay una impresión en curso. Espera a que termine.'); return }
     setLogs([]); setImpGlobal(true)
@@ -174,6 +181,10 @@ export default function Impresion() {
                 className="text-[#2980b9] font-mono text-xs hover:underline disabled:opacity-40"
                 title="Bluetooth directo (ideal en Android)">
                 o por Bluetooth (Android)
+              </button>
+              <button onClick={modoDemo} className="text-[#8e44ad] font-mono text-xs hover:underline"
+                title="Simula la impresión para revisar la interfaz, sin impresora real">
+                🧪 Modo demo (sin impresora)
               </button>
             </>
           ) : (
