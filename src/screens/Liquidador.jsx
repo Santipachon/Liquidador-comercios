@@ -405,7 +405,7 @@ function Toast({ message, type }) {
 }
 
 // ─── App ──────────────────────────────────────────────────────────────────────
-export default function Liquidador({ onGuardar }) {
+export default function Liquidador({ onGuardar, onImprimir }) {
   const [products, setProducts] = useState(() => leerLiqGuardada().products || [])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -822,7 +822,7 @@ export default function Liquidador({ onGuardar }) {
   // Guarda la liquidación en la plataforma (historial + catálogo). Se llama al exportar
   // y desde el botón "Guardar en historial". Es idempotente por número de factura.
   function guardarEnHistorial(avisar = true) {
-    if (!onGuardar || !products.length) return
+    if (!onGuardar || !products.length) return null
     const sigla = siglaFactura.trim().toUpperCase()
     const payload = {
       numero: numeroFactura || '',
@@ -845,9 +845,18 @@ export default function Liquidador({ onGuardar }) {
         }
       }),
     }
-    onGuardar(payload)
+    const fact = onGuardar(payload)
     if (bandejaItemId) { quitarDeBandeja(bandejaItemId); refrescarBandeja(); setBandejaItemId(null) }  // recién ahora sale de la bandeja
     if (avisar) showToast('✓ Liquidación guardada en el historial', 'success')
+    return fact
+  }
+
+  // Botón principal: guarda la liquidación y va DIRECTO a imprimir esa factura.
+  function guardarEImprimir() {
+    const fact = guardarEnHistorial(false)
+    if (!fact) { showToast('No hay productos para guardar.', 'error'); return }
+    showToast('✓ Liquidación guardada', 'success')
+    if (onImprimir) onImprimir(fact.id)
   }
 
   // Registra un proveedor nuevo con la sigla escrita; valida que la sigla sea única
@@ -1123,17 +1132,16 @@ export default function Liquidador({ onGuardar }) {
               <p className="text-xs font-mono text-[#999] mt-2">Venta estimada = precio de venta × unidades de cada producto · Ganancia = venta estimada − costo total con IVA</p>
             </div>
 
-            <div className="flex gap-3 flex-wrap pt-2">
-              <button onClick={handleExport}
-                className="flex items-center gap-2 font-semibold text-base px-6 py-3 border-2 border-[#1a6b3c] text-[#1a6b3c] bg-transparent transition-all duration-200 hover:bg-[#1a6b3c] hover:text-white cursor-pointer">
-                <IconExcel /> Imprimir / Excel
+            <div className="flex gap-3 flex-wrap pt-2 items-center">
+              <button onClick={onGuardar ? guardarEImprimir : handleExport}
+                className="flex items-center gap-2 font-semibold text-base px-6 py-3 border-2 border-[#1a6b3c] text-white bg-[#1a6b3c] transition-all duration-200 hover:brightness-110 cursor-pointer">
+                🖨️ Imprimir y guardar liquidación
               </button>
-              {onGuardar && (
-                <button onClick={() => guardarEnHistorial(true)}
-                  className="flex items-center gap-2 font-semibold text-base px-6 py-3 border-2 border-[#2980b9] text-[#2980b9] bg-transparent transition-all duration-200 hover:bg-[#2980b9] hover:text-white cursor-pointer">
-                  💾 Guardar en historial
-                </button>
-              )}
+              <button onClick={handleExport}
+                className="font-mono text-sm text-[#2980b9] hover:underline cursor-pointer"
+                title="Descargar el Excel (opcional). También guarda la liquidación.">
+                o descargar Excel
+              </button>
               <button className="btn-danger flex items-center gap-2" onClick={handleClear}>
                 <IconTrash /> Limpiar
               </button>

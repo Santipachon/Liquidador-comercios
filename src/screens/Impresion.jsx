@@ -64,6 +64,15 @@ export default function Impresion() {
     return () => window.removeEventListener('keydown', h)
   }, [preview])
 
+  // Si llegamos del Liquidador con ?f=<id>, abrir esa factura directo en el detalle.
+  useEffect(() => {
+    const m = window.location.hash.match(/[?&]f=([^&]+)/)
+    if (!m) return
+    const f = getFacturas().find(x => x.id === decodeURIComponent(m[1]))
+    if (f) setAbierta(f)
+    history.replaceState(null, '', window.location.href.replace(/[?&]f=[^&]+/, ''))  // limpia el ?f= de la URL
+  }, [])
+
   const facturas = getFacturas()
   // Una factura está "liquidada" (imprimible) si tiene precio de venta / código en sus ítems.
   const esLiquidada = f => (f.venta || 0) > 0 || (f.items || []).some(it => (it.precio_venta || 0) > 0 || it.codigo_interno)

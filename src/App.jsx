@@ -111,7 +111,7 @@ function LiquidarScreen() {
         <h2 className="text-2xl font-bold font-mono">🧾 Liquidar factura</h2>
         <button className="text-[#2980b9] font-mono text-sm hover:underline" onClick={() => nav('/dashboard')}>Ver reportes →</button>
       </div>
-      <Liquidador onGuardar={guardarLiquidacion} />
+      <Liquidador onGuardar={guardarLiquidacion} onImprimir={(fid) => nav('/imprimir?f=' + encodeURIComponent(fid))} />
     </div>
   )
 }

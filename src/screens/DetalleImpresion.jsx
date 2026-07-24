@@ -27,6 +27,7 @@ export default function DetalleImpresion({ factura, printerOn, onVolver, onFactu
   const [error, setError] = useState('')
   const [preview, setPreview] = useState(null)
   const [imprimiendo, setImprimiendo] = useState(false)
+  const [orden, setOrden] = useState({ col: null, dir: 1 })   // ordenar la tabla por columna
 
   useEffect(() => {
     if (!preview) return
@@ -44,6 +45,23 @@ export default function DetalleImpresion({ factura, printerOn, onVolver, onFactu
   const filtrados = items
     .map((it, i) => ({ it, i }))
     .filter(({ it }) => !busqueda.trim() || coincide(`${it.nombre || ''} ${it.codigo || ''}`, busqueda))
+
+  // Orden por columna (clic en el encabezado): alterna ascendente/descendente.
+  const valorOrden = ({ it, i }) => {
+    switch (orden.col) {
+      case 'nombre': return (it.nombre || '').toLowerCase()
+      case 'codigo': return (it.codigo || '').toLowerCase()
+      case 'republicas': return codigoDeItem(it)
+      case 'precio': return it.precio_venta ?? 0
+      case 'margen': return it.margen ?? 0
+      case 'etiq': return etiq[i] ?? 0
+      default: return i
+    }
+  }
+  const ordenados = orden.col
+    ? [...filtrados].sort((a, b) => { const va = valorOrden(a), vb = valorOrden(b); return (va < vb ? -1 : va > vb ? 1 : 0) * orden.dir })
+    : filtrados
+  const ordenarPor = col => setOrden(o => (o.col === col ? { col, dir: -o.dir } : { col, dir: 1 }))
 
   function toggle(i) { setSel(s => { const n = new Set(s); n.has(i) ? n.delete(i) : n.add(i); return n }) }
   function toggleTodos() {
@@ -140,7 +158,7 @@ export default function DetalleImpresion({ factura, printerOn, onVolver, onFactu
             {prog.prod && <p className="font-mono text-[10px] text-[#999] truncate max-w-[240px]">{prog.prod}</p>}
             <div className="h-1.5 bg-[#e5e5e5] mt-1 w-56"><div className="h-full bg-[#2980b9]" style={{ width: `${prog.total ? Math.round((prog.hechas / prog.total) * 100) : 0}%` }} /></div>
           </div>
-          <button onClick={cancelarImpresion} className="btn-plat border-[#c0392b] text-[#c0392b] hover:bg-[#c0392b] hover:text-white text-sm py-1.5">✕ Cancelar</button>
+          <button onClick={cancelarImpresion} className="font-bold text-white bg-[#c0392b] hover:brightness-110 px-5 py-2 text-base cursor-pointer whitespace-nowrap">⛔ PARAR</button>
         </div>
       )}
       {error && <div className="pcard border-l-[6px] py-2" style={{ borderLeftColor: '#c0392b' }}><p className="text-sm text-[#c0392b] font-mono">{error}</p></div>}
@@ -149,11 +167,20 @@ export default function DetalleImpresion({ factura, printerOn, onVolver, onFactu
       <div className="pcard overflow-x-auto p-0">
         <table className="w-full border-collapse text-sm">
           <thead>
-            <tr>{['', 'Producto', 'Cód. empresa', 'Código', 'Precio', 'Margen', 'Etiq.', ''].map((h, i) =>
-              <th key={i} className="bg-[#33302b] text-white text-left px-3 py-2 text-xs font-mono uppercase tracking-wider">{h}</th>)}</tr>
+            <tr>
+              <th className="bg-[#33302b] text-white px-2 py-2 text-xs font-mono"></th>
+              {[['nombre', 'Producto'], ['codigo', 'Cód. empresa'], ['republicas', 'Código'], ['precio', 'Precio'], ['margen', 'Margen'], ['etiq', 'Etiq.']].map(([col, h]) => (
+                <th key={col} onClick={() => ordenarPor(col)}
+                  className="bg-[#33302b] text-white text-left px-3 py-2 text-xs font-mono uppercase tracking-wider cursor-pointer select-none hover:bg-[#44403a]"
+                  title="Clic para ordenar por esta columna">
+                  {h}{orden.col === col ? (orden.dir === 1 ? ' ▲' : ' ▼') : ' ↕'}
+                </th>
+              ))}
+              <th className="bg-[#33302b] text-white px-3 py-2 text-xs font-mono"></th>
+            </tr>
           </thead>
           <tbody>
-            {filtrados.map(({ it, i }) => {
+            {ordenados.map(({ it, i }) => {
               const impr = esImprimible(it)
               const hecho = impresos.has(i)
               return (
@@ -188,7 +215,7 @@ export default function DetalleImpresion({ factura, printerOn, onVolver, onFactu
                 </tr>
               )
             })}
-            {filtrados.length === 0 && (
+            {ordenados.length === 0 && (
               <tr><td colSpan={8} className="px-3 py-6 text-center text-[#999] font-mono text-sm">Ningún producto coincide con la búsqueda.</td></tr>
             )}
           </tbody>
