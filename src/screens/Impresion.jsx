@@ -114,11 +114,11 @@ export default function Impresion() {
     setAbierta(f)
   }
 
-  // Al marcar la factura como impresa desde el detalle.
+  // Al marcar la factura como impresa desde el detalle. NO cierra el detalle:
+  // se puede seguir reimprimiendo (p. ej. si una etiqueta salió mal).
   function facturaImpresa(f) {
     marcarImpreso(f.id, usuario?.nombre)
-    setAviso(`✅ Factura ${f.numero} marcada como impresa.`)
-    setAbierta(null)
+    setAviso(`✅ Factura ${f.numero} marcada como impresa. Puedes seguir reimprimiendo lo que necesites.`)
     refrescar()
   }
 
@@ -238,17 +238,16 @@ export default function Impresion() {
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <button onClick={() => verEtiqueta(f)} className="btn-plat border-[#8e44ad] text-[#8e44ad] hover:bg-[#8e44ad] hover:text-white text-sm py-1.5">👁 Ver</button>
-                    {imp ? (
-                      <button onClick={() => { desmarcarImpreso(f.id); refrescar() }} className="text-[#777] font-mono text-xs hover:underline">Desmarcar</button>
-                    ) : liq ? (
+                    {liq ? (
                       <button onClick={() => abrirDetalle(f)} disabled={nEti === 0}
-                        title={nEti === 0 ? 'Esta factura no tiene etiquetas' : 'Abrir para imprimir por producto'}
+                        title={nEti === 0 ? 'Esta factura no tiene etiquetas' : (imp ? 'Volver a abrir para reimprimir' : 'Abrir para imprimir por producto')}
                         className="btn-plat border-[#1a6b3c] text-[#1a6b3c] hover:bg-[#1a6b3c] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed text-sm py-1.5">
-                        🖨️ Imprimir {nEti}
+                        🖨️ {imp ? 'Reimprimir' : 'Imprimir'} {nEti}
                       </button>
                     ) : (
                       <span className="font-mono text-xs text-[#b45309] bg-[#fef3c7] border border-[#fde68a] px-2 py-1" title="Falta ponerle margen/precio en 🧾 Liquidar">⚠ Falta liquidar</span>
                     )}
+                    {imp && <button onClick={() => { desmarcarImpreso(f.id); refrescar() }} className="text-[#777] font-mono text-xs hover:underline">Desmarcar</button>}
                   </div>
                 </div>
               )

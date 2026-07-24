@@ -98,8 +98,16 @@ export default function DetalleImpresion({ factura, printerOn, onVolver, onFactu
         </span>
       </div>
       <div className="pcard">
-        <h2 className="text-xl font-bold font-mono">Factura {factura.numero}</h2>
+        <div className="flex items-center gap-2 flex-wrap">
+          <h2 className="text-xl font-bold font-mono">Factura {factura.numero}</h2>
+          {factura.impresoAt && <span className="font-mono text-xs text-[#166534] bg-[#f0fdf4] border border-[#86efac] px-2 py-0.5">✅ Impresa</span>}
+        </div>
         <p className="text-sm text-[#666] font-mono mt-1">{provNombre(factura.sigla)} ({factura.sigla}) · {fechaCorta(factura.fecha)} · {items.length} productos</p>
+        {factura.impresoAt && (
+          <p className="text-xs text-[#1a6b3c] font-mono mt-1">
+            Ya marcada como impresa{factura.impresoPor ? ` por ${factura.impresoPor}` : ''} · {fechaCorta(factura.impresoAt)} — igual puedes reimprimir lo que necesites.
+          </p>
+        )}
       </div>
 
       {/* Barra de herramientas */}
