@@ -27,6 +27,7 @@ export default function DetalleImpresion({ factura, printerOn, onVolver, onFactu
   const [error, setError] = useState('')
   const [preview, setPreview] = useState(null)
   const [imprimiendo, setImprimiendo] = useState(false)
+  const [imprimiendoIdx, setImprimiendoIdx] = useState(null)  // fila que se está imprimiendo AHORA → su botón se vuelve PARAR
   const [orden, setOrden] = useState({ col: null, dir: 1 })   // ordenar la tabla por columna
 
   useEffect(() => {
@@ -82,19 +83,23 @@ export default function DetalleImpresion({ factura, printerOn, onVolver, onFactu
       .filter(i => esImprimible(items[i]) && (etiq[i] ?? 0) > 0)
       .map(i => ({ it: items[i], etiquetas: etiq[i], _idx: i }))
     if (!productos.length) { setError('No hay etiquetas para imprimir en esa selección.'); return }
-    setError(''); setImprimiendo(true)
+    setError(''); setImprimiendo(true); setImprimiendoIdx(productos[0]._idx)
     setProg({ hechas: 0, total: productos.reduce((n, p) => n + p.etiquetas, 0), prod: '' })
     let res = null
     try {
       res = await imprimirProductos(factura, productos, {
-        onEtiqueta: (hechas, total, it) => setProg({ hechas, total, prod: it?.nombre || '' }),
+        onEtiqueta: (hechas, total, it) => {
+          setProg({ hechas, total, prod: it?.nombre || '' })
+          const p = productos.find(p => p.it === it)   // fila que sale AHORA → su botón muestra PARAR
+          if (p) setImprimiendoIdx(p._idx)
+        },
         onProductoListo: pi => { const idx = productos[pi]._idx; setImpresos(s => { const n = new Set(s); n.add(idx); return n }) },
       })
     } catch (e) {
-      setError(mensajeErr(e)); setProg(null); setImprimiendo(false); return
+      setError(mensajeErr(e)); setProg(null); setImprimiendo(false); setImprimiendoIdx(null); return
     }
-    setProg(null); setImprimiendo(false)
-    if (res?.cancelado) setError(`⏸ Cancelado: salieron ${res.hechas} de ${res.total} etiquetas.`)
+    setProg(null); setImprimiendo(false); setImprimiendoIdx(null)
+    if (res?.cancelado) setError(`⏸ Parado: salieron ${res.hechas} de ${res.total} etiquetas (la que estaba imprimiendo se terminó).`)
   }
 
   function marcarFacturaImpresa() {
@@ -183,8 +188,9 @@ export default function DetalleImpresion({ factura, printerOn, onVolver, onFactu
             {ordenados.map(({ it, i }) => {
               const impr = esImprimible(it)
               const hecho = impresos.has(i)
+              const saliendo = imprimiendo && imprimiendoIdx === i
               return (
-                <tr key={i} className={`border-b border-[#e0ddd5] ${hecho ? 'bg-[#f0fdf4]' : ''} ${!impr ? 'opacity-50' : ''}`}>
+                <tr key={i} className={`border-b border-[#e0ddd5] ${saliendo ? 'bg-[#fff7ed] ring-2 ring-inset ring-[#c0392b]' : hecho ? 'bg-[#f0fdf4]' : ''} ${!impr ? 'opacity-50' : ''}`}>
                   <td className="px-2 py-2 text-center">
                     <input type="checkbox" disabled={!impr || imprimiendo} checked={sel.has(i)} onChange={() => toggle(i)} className="w-4 h-4 accent-[#1a6b3c]" />
                   </td>
@@ -200,14 +206,23 @@ export default function DetalleImpresion({ factura, printerOn, onVolver, onFactu
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap">
                     {impr ? (
+                      saliendo ? (
+                        <div className="flex items-center gap-2 justify-end">
+                          <button onClick={cancelarImpresion}
+                            className="font-bold text-white bg-[#c0392b] hover:brightness-110 px-4 py-1.5 text-sm cursor-pointer whitespace-nowrap animate-pulse">
+                            ⛔ PARAR
+                          </button>
+                        </div>
+                      ) : (
                       <div className="flex items-center gap-2 justify-end">
-                        <button onClick={() => ver(it)} className="text-[#8e44ad] font-mono text-xs hover:underline">👁 Ver</button>
+                        <button onClick={() => ver(it)} disabled={imprimiendo} className="text-[#8e44ad] font-mono text-xs hover:underline disabled:opacity-40">👁 Ver</button>
                         <button onClick={() => imprimirLista([i])} disabled={imprimiendo || !printerOn || (etiq[i] ?? 0) === 0}
                           className="btn-plat border-[#1a6b3c] text-[#1a6b3c] hover:bg-[#1a6b3c] hover:text-white text-xs py-1 disabled:opacity-40">
                           🖨️ {hecho ? 'Reimprimir' : 'Imprimir'}
                         </button>
                         {hecho && <span className="text-[#1a6b3c] font-mono text-xs">✓</span>}
                       </div>
+                      )
                     ) : (
                       <span className="font-mono text-[10px] text-[#b45309]">sin precio/código</span>
                     )}
